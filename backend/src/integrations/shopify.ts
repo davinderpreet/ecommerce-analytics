@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 const SHOP = process.env.SHOPIFY_SHOP_DOMAIN!;
 const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
-const API_VER = "2024-07"; // stable admin version
+const API_VER = "2024-07";
 
 async function shopifyGraphQL<T>(query: string, variables: any = {}): Promise<T> {
   const res = await fetch(`https://${SHOP}/admin/api/${API_VER}/graphql.json`, {
@@ -15,10 +15,7 @@ async function shopifyGraphQL<T>(query: string, variables: any = {}): Promise<T>
     },
     body: JSON.stringify({ query, variables }),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Shopify GraphQL ${res.status}: ${text}`);
-  }
+  if (!res.ok) throw new Error(`Shopify GraphQL ${res.status}: ${await res.text()}`);
   return res.json() as any;
 }
 
@@ -30,9 +27,7 @@ async function ensureShopifyChannel() {
 
 export async function syncShopifyOrders(days = 7) {
   const channel = await ensureShopifyChannel();
-
-  const since = new Date();
-  since.setDate(since.getDate() - days);
+  const since = new Date(); since.setDate(since.getDate() - days);
 
   const query = `
     query Orders($cursor: String, $since: DateTime) {
@@ -40,10 +35,7 @@ export async function syncShopifyOrders(days = 7) {
         edges {
           cursor
           node {
-            id
-            name
-            createdAt
-            currencyCode
+            id name createdAt currencyCode
             subtotalPriceSet { shopMoney { amount } }
             totalTaxSet { shopMoney { amount } }
             totalShippingPriceSet { shopMoney { amount } }
@@ -52,12 +44,9 @@ export async function syncShopifyOrders(days = 7) {
             lineItems(first: 250) {
               edges {
                 node {
-                  id
-                  title
-                  sku
-                  quantity
+                  id title sku quantity
                   originalUnitPriceSet { shopMoney { amount } }
-                  discountedTotalSet { shopMoney { amount } }
+                  discountedTotalSet   { shopMoney { amount } }
                 }
               }
             }
@@ -73,58 +62,45 @@ export async function syncShopifyOrders(days = 7) {
     const edges = data?.data?.orders?.edges ?? [];
     for (const e of edges) {
       const o = e.node;
+      const cents = (x: string) => Math.round(parseFloat(x) * 100);
 
-      const subtotal = Math.round(parseFloat(o.subtotalPriceSet.shopMoney.amount) * 100);
-      const tax = Math.round(parseFloat(o.totalTaxSet.shopMoney.amount) * 100);
-      const ship = Math.round(parseFloat(o.totalShippingPriceSet.shopMoney.amount) * 100);
-      const total = Math.round(parseFloat(o.totalPriceSet.shopMoney.amount) * 100);
-
-      // Upsert the order
       const order = await prisma.order.upsert({
         where: { channelRef: o.id },
         update: {
           number: o.name,
           createdAt: new Date(o.createdAt),
           currency: o.currencyCode,
-          subtotalCents: subtotal,
-          taxCents: tax,
-          shippingCents: ship,
-          totalCents: total,
+          subtotalCents: cents(o.subtotalPriceSet.shopMoney.amount),
+          taxCents:      cents(o.totalTaxSet.shopMoney.amount),
+          shippingCents: cents(o.totalShippingPriceSet.shopMoney.amount),
+          totalCents:    cents(o.totalPriceSet.shopMoney.amount),
           customerEmail: o.customer?.email ?? null,
         },
         create: {
-          channelId: channel.id,
+          channelId: (channel.id),
           channelRef: o.id,
           number: o.name,
           createdAt: new Date(o.createdAt),
           currency: o.currencyCode,
-          subtotalCents: subtotal,
-          taxCents: tax,
-          shippingCents: ship,
-          totalCents: total,
+          subtotalCents: cents(o.subtotalPriceSet.shopMoney.amount),
+          taxCents:      cents(o.totalTaxSet.shopMoney.amount),
+          shippingCents: cents(o.totalShippingPriceSet.shopMoney.amount),
+          totalCents:    cents(o.totalPriceSet.shopMoney.amount),
           customerEmail: o.customer?.email ?? null,
         },
       });
 
-      // Line items
       for (const liEdge of o.lineItems.edges) {
         const li = liEdge.node;
         const unit = Math.round(parseFloat(li.originalUnitPriceSet.shopMoney.amount) * 100);
-        const lineTotal = Math.round(parseFloat(li.discountedTotalSet.shopMoney.amount) * 100);
-        const sku = li.sku || undefined;
+        const line = Math.round(parseFloat(li.discountedTotalSet.shopMoney.amount) * 100);
 
-        // Ensure product by SKU
         let productId: string | undefined = undefined;
-        if (sku) {
-          let product = await prisma.product.findUnique({ where: { sku } });
+        if (li.sku) {
+          let product = await prisma.product.findUnique({ where: { sku: li.sku } });
           if (!product) {
             product = await prisma.product.create({
-              data: {
-                channelId: channel.id,
-                sku,
-                title: li.title,
-                currency: o.currencyCode,
-              },
+              data: { channelId: channel.id, sku: li.sku, title: li.title, currency: o.currencyCode },
             });
           }
           productId = product.id;
@@ -134,11 +110,11 @@ export async function syncShopifyOrders(days = 7) {
           data: {
             orderId: order.id,
             productId,
-            sku,
+            sku: li.sku || undefined,
             title: li.title,
             quantity: li.quantity,
             priceCents: unit,
-            totalCents: lineTotal,
+            totalCents: line,
           },
         });
       }
