@@ -1,38 +1,45 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Dashboard from './Dashboard';
-import './App.css';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 function HomePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-6xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-6">
-          E-commerce Analytics
-        </h1>
-        <p className="text-white/70 text-xl mb-8">AI-Powered Multi-Platform Dashboard</p>
-        <a 
-          href="/dashboard" 
-          className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg transition-all duration-300 hover:scale-105"
-        >
-          View Dashboard →
-        </a>
-      </div>
+    <div style={{ padding: '20px', textAlign: 'center' }}>
+      <h1>E-commerce Analytics Dashboard</h1>
+      <p>Welcome to the analytics platform</p>
+      <a href="/dashboard" style={{ 
+        display: 'inline-block', 
+        padding: '10px 20px', 
+        backgroundColor: '#007bff', 
+        color: 'white', 
+        textDecoration: 'none',
+        borderRadius: '5px'
+      }}>
+        Go to Dashboard
+      </a>
+    </div>
+  );
+}
+
+function Dashboard() {
+  return (
+    <div style={{ padding: '20px' }}>
+      <h1>Dashboard</h1>
+      <p>This is the dashboard page</p>
+      <a href="/" style={{ color: '#007bff' }}>← Back to Home</a>
     </div>
   );
 }
 
 function App() {
   return (
-    <div className="App">
-      <h1>Test App Loading</h1>
-      <Router>
+    <Router>
+      <div className="App">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
-      </Router>
-    </div>
+      </div>
+    </Router>
   );
 }
 
