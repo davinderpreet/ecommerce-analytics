@@ -1,9 +1,11 @@
+/* backend/src/routes/analytics.ts */
 import express from 'express';
-import { PrismaClient, Channel } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/* Helpers */
 function parseDateISO(s: string | undefined, fallback: Date): Date {
   if (!s) return fallback;
   const d = new Date(s);
@@ -12,32 +14,41 @@ function parseDateISO(s: string | undefined, fallback: Date): Date {
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function endOfDay(d: Date)   { const x = new Date(d); x.setHours(23,59,59,999); return x; }
 function dateKey(d: Date | string) { const o = typeof d === 'string' ? new Date(d) : d; return o.toISOString().slice(0,10); }
-function toDollars(cents?: number | null) { return ((cents ?? 0) / 100); }
-function pctGrowth(curr: number, prev: number) { if (prev <= 0) return null; return ((curr - prev) / prev) * 100; }
+const toDollars = (cents?: number | null) => ((cents ?? 0) / 100);
+const pctGrowth = (curr: number, prev: number) => (prev > 0 ? ((curr - prev) / prev) * 100 : null);
 
-async function getChannelMap() {
-  const channels = await prisma.channel.findMany();
-  const byId = new Map<string, Channel>();
-  const byCode = new Map<string, Channel>();
+type OrderLite = { totalCents: number | null; channelId?: string; createdAt?: Date };
+
+async function getChannelMap(): Promise<{
+  byId: Map<string, { id: string; name: string; code: string }>;
+  byCode: Map<string, { id: string; name: string; code: string }>;
+}> {
+  // only select fields we need
+  const channels = await prisma.channel.findMany({ select: { id: true, name: true, code: true } });
+  const byId = new Map<string, { id: string; name: string; code: string }>();
+  const byCode = new Map<string, { id: string; name: string; code: string }>();
   for (const c of channels) { byId.set(c.id, c); byCode.set(c.code, c); }
   return { byId, byCode };
 }
 
+/**
+ * GET /metrics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=shopify|bestbuy|all
+ */
 router.get('/metrics', async (req, res) => {
   try {
-    const { platform = 'all' } = req.query as { start_date?: string; end_date?: string; platform?: string };
+    const platform = String((req.query.platform as string) ?? 'all');
     const today = new Date();
     const start = startOfDay(parseDateISO(req.query.start_date as string, today));
     const end = endOfDay(parseDateISO(req.query.end_date as string, today));
+
     const { byCode } = await getChannelMap();
 
-    const where: any = { createdAt: { gte: start, lte: end } };
-    if (platform === 'shopify' && byCode.get('shopify')) where.channelId = byCode.get('shopify')!.id;
-    if (platform === 'bestbuy' && byCode.get('bestbuy')) where.channelId = byCode.get('bestbuy')!.id;
+    const where: Record<string, unknown> = { createdAt: { gte: start, lte: end } };
+    if (platform === 'shopify' && byCode.get('shopify')) (where as any).channelId = byCode.get('shopify')!.id;
 
     const orders = await prisma.order.findMany({ where, select: { totalCents: true } });
     const totalOrders = orders.length;
-    const totalRevenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const totalRevenueCents = orders.reduce((s: number, o: { totalCents: number | null }) => s + (o.totalCents ?? 0), 0);
     const aovCents = totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0;
 
     res.json({
@@ -52,6 +63,9 @@ router.get('/metrics', async (req, res) => {
   }
 });
 
+/**
+ * GET /dashboard-summary?range=7d|30d|90d
+ */
 router.get('/dashboard-summary', async (req, res) => {
   try {
     const range = String(req.query.range ?? '7d');
@@ -75,14 +89,17 @@ router.get('/dashboard-summary', async (req, res) => {
     });
 
     const totalOrders = orders.length;
-    const revenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const revenueCents = orders.reduce((s: number, o: OrderLite) => s + (o.totalCents ?? 0), 0);
     const aovCents = totalOrders ? Math.round(revenueCents / totalOrders) : 0;
 
+    // Platform comparison
     const byChannel = new Map<string, { revenueCents: number; orders: number }>();
     for (const o of orders) {
-      const agg = byChannel.get(o.channelId) || { revenueCents: 0, orders: 0 };
-      agg.revenueCents += (o.totalCents || 0); agg.orders += 1;
-      byChannel.set(o.channelId, agg);
+      const key = o.channelId as string;
+      const agg = byChannel.get(key) || { revenueCents: 0, orders: 0 };
+      agg.revenueCents += (o.totalCents ?? 0);
+      agg.orders += 1;
+      byChannel.set(key, agg);
     }
     const platformComparison = Array.from(byChannel.entries()).map(([id, v]) => ({
       name: byId.get(id)?.name || 'Unknown',
@@ -90,20 +107,30 @@ router.get('/dashboard-summary', async (req, res) => {
       orders: v.orders,
     }));
 
+    // Sales trend (daily buckets)
     const trendMap = new Map<string, { revenueCents: number; orders: number }>();
     for (let i = 0; i < days; i++) {
       const d = new Date(start); d.setDate(start.getDate() + i);
       trendMap.set(dateKey(d), { revenueCents: 0, orders: 0 });
     }
     for (const o of orders) {
-      const k = dateKey(o.createdAt);
-      const curr = trendMap.get(k); if (curr) { curr.revenueCents += (o.totalCents || 0); curr.orders += 1; }
+      const k = dateKey(o.createdAt as Date);
+      const curr = trendMap.get(k);
+      if (curr) {
+        curr.revenueCents += (o.totalCents ?? 0);
+        curr.orders += 1;
+      }
     }
     const salesTrend = Array.from(trendMap.entries())
-      .sort(([a],[b]) => a < b ? -1 : 1)
-      .map(([date, v]) => ({ date, revenue: toDollars(v.revenueCents), orders: v.orders, aov: v.orders ? toDollars(Math.round(v.revenueCents/v.orders)) : 0 }));
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, v]) => ({
+        date,
+        revenue: toDollars(v.revenueCents),
+        orders: v.orders,
+        aov: v.orders ? toDollars(Math.round(v.revenueCents / v.orders)) : 0,
+      }));
 
-    const prevRevenueCents = prevOrders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const prevRevenueCents = prevOrders.reduce((s: number, o: { totalCents: number | null }) => s + (o.totalCents ?? 0), 0);
     const revenueGrowth = pctGrowth(revenueCents, prevRevenueCents);
 
     res.json({
@@ -121,6 +148,9 @@ router.get('/dashboard-summary', async (req, res) => {
   }
 });
 
+/**
+ * GET /sales-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+ */
 router.get('/sales-trend', async (req, res) => {
   try {
     const today = new Date();
@@ -133,17 +163,24 @@ router.get('/sales-trend', async (req, res) => {
     });
 
     const dayMap = new Map<string, { revenueCents: number; orders: number }>();
-    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400000)) {
+    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86_400_000)) {
       dayMap.set(dateKey(d), { revenueCents: 0, orders: 0 });
     }
     for (const o of orders) {
-      const k = dateKey(o.createdAt);
-      const agg = dayMap.get(k)!; agg.revenueCents += (o.totalCents || 0); agg.orders += 1;
+      const k = dateKey(o.createdAt as Date);
+      const agg = dayMap.get(k)!;
+      agg.revenueCents += (o.totalCents ?? 0);
+      agg.orders += 1;
     }
 
     const trend = Array.from(dayMap.entries())
-      .sort(([a],[b]) => a < b ? -1 : 1)
-      .map(([date, v]) => ({ date, revenue: toDollars(v.revenueCents), orders: v.orders, aov: v.orders ? toDollars(Math.round(v.revenueCents/v.orders)) : 0 }));
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, v]) => ({
+        date,
+        revenue: toDollars(v.revenueCents),
+        orders: v.orders,
+        aov: v.orders ? toDollars(Math.round(v.revenueCents / v.orders)) : 0,
+      }));
 
     res.json({ success: true, start: dateKey(start), end: dateKey(end), data: trend });
   } catch (error: any) {
