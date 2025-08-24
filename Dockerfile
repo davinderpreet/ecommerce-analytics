@@ -1,26 +1,25 @@
 FROM node:18-alpine
 
-# Set working directory
-WORKDIR /app
+# Set working directory to frontend
+WORKDIR /app/frontend
 
 # Copy package files
-COPY frontend/package*.json ./frontend/
+COPY frontend/package*.json ./
 
 # Install dependencies
-WORKDIR /app/frontend
 RUN npm install
 
-# Copy all frontend source code
+# Copy frontend source
 COPY frontend/ ./
 
-# Build the React app
+# Build the app
 RUN npm run build
 
-# Install serve to run the built app
+# Install serve globally
 RUN npm install -g serve
 
-# Expose port that Railway will use
+# Expose port
 EXPOSE 3000
 
-# Start the app with SPA support
+# Start the app (no cd command needed since we're already in /app/frontend)
 CMD ["serve", "-s", "build", "-l", "3000"]
