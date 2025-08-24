@@ -9,21 +9,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/* -------------------------
-   Core entities
--------------------------- */
+// --------- Core entities ----------
 
 model Channel {
   id           String        @id @default(cuid())
   name         String
-  code         String        @unique   // 'shopify' | 'bestbuy'
+  code         String        @unique
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  /* Relations */
+  // Relations
   products     Product[]
   orders       Order[]
-  dailyMetrics DailyMetric[] // <-- back-relation required for DailyMetric.channel
+  dailyMetrics DailyMetric[]
 
   @@map("channels")
 }
@@ -32,7 +30,7 @@ model Product {
   id         String    @id @default(cuid())
   channelId  String
   channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelRef String?   // remote id if needed
+  channelRef String?
   sku        String    @unique
   title      String
   active     Boolean   @default(true)
@@ -48,12 +46,12 @@ model Product {
 }
 
 model Inventory {
-  id         String    @id @default(cuid())
-  productId  String    @unique
-  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity   Int       @default(0)
-  updatedAt  DateTime  @updatedAt
-  createdAt  DateTime  @default(now())
+  id         String   @id @default(cuid())
+  productId  String   @unique
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity   Int      @default(0)
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
 
   @@map("inventory")
 }
@@ -62,7 +60,7 @@ model Order {
   id            String    @id @default(cuid())
   channelId     String
   channel       Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelRef    String    @unique        // Shopify order id / Mirakl order id
+  channelRef    String    @unique
   number        String?
   createdAt     DateTime
   updatedAt     DateTime  @updatedAt
@@ -88,8 +86,8 @@ model OrderItem {
   sku        String?
   title      String
   quantity   Int
-  priceCents Int      // unit price in cents
-  totalCents Int      // line total in cents
+  priceCents Int
+  totalCents Int
 
   @@map("order_items")
 }
@@ -109,7 +107,7 @@ model DailyMetric {
   @@map("daily_metrics")
 }
 
-/* Optional, keep if you already have it */
+// --------- Optional (keep if useful) ----------
 
 model User {
   id          String   @id @default(cuid())
