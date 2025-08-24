@@ -18,8 +18,8 @@ RUN npm run build
 # Install serve globally
 RUN npm install -g serve
 
-# Expose port
-EXPOSE 3000
+# Expose the port Railway expects
+EXPOSE $PORT
 
-# Start the app (no cd command needed since we're already in /app/frontend)
-CMD ["serve", "-s", "build", "-l", "3000"]
+# Start the app on Railway's dynamic port
+CMD ["sh", "-c", "serve -s build -l $PORT"]
