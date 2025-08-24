@@ -1,17 +1,18 @@
-// backend/src/routes/sync.ts
 import express from "express";
-import { runFullSync } from "../jobs/sync";
+import { syncShopifyOrders } from "../integrations/shopify";
 
 const router = express.Router();
 
-router.post("/", async (req, res) => {
+// Manual trigger: POST /api/v1/sync/shopify?days=7
+router.post("/shopify", async (req, res) => {
   const days = Number(req.query.days ?? 7);
   try {
-    await runFullSync(days);
-    res.json({ ok: true, days });
+    await syncShopifyOrders(days);
+    res.json({ ok: true, source: "shopify", days });
   } catch (e: any) {
-    res.status(500).json({ ok: false, error: e?.message || "sync_failed" });
+    res.status(500).json({ ok: false, source: "shopify", error: e?.message || "sync_failed" });
   }
 });
 
 export default router;
+
