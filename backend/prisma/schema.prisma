@@ -1,0 +1,132 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  companyName String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  platforms Platform[]
+  
+  @@map("users")
+}
+
+model Platform {
+  id            String   @id @default(cuid())
+  name          String   // 'shopify', 'bestbuy', etc.
+  apiCredentials Json?   // Store encrypted API keys
+  isActive      Boolean  @default(true)
+  lastSyncAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  products      Product[]
+  orders        Order[]
+  analyticsDaily AnalyticsDaily[]
+  
+  @@map("platforms")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sku         String
+  name        String
+  description String?
+  price       Decimal
+  category    String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  platformId String
+  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  
+  orderItems OrderItem[]
+  
+  @@unique([sku, platformId])
+  @@map("products")
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  orderNumber String
+  total       Decimal
+  subtotal    Decimal?
+  tax         Decimal?
+  shipping    Decimal?
+  status      String   // 'pending', 'paid', 'shipped', 'delivered', 'cancelled'
+  customerEmail String?
+  customerName  String?
+  orderDate   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  platformId String
+  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  
+  orderItems OrderItem[]
+  
+  @@unique([orderNumber, platformId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id       String  @id @default(cuid())
+  quantity Int
+  price    Decimal
+  total    Decimal
+  
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@map("order_items")
+}
+
+model AnalyticsDaily {
+  id           String   @id @default(cuid())
+  date         DateTime @db.Date
+  revenue      Decimal
+  orders       Int
+  productsSold Int
+  visitors     Int?
+  conversion   Decimal?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  platformId String
+  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  
+  @@unique([date, platformId])
+  @@map("analytics_daily")
+}
+
+model Prediction {
+  id               String   @id @default(cuid())
+  date             DateTime @db.Date
+  predictedRevenue Decimal
+  confidence       Decimal  // 0.0 to 1.0
+  modelType        String   // 'arima', 'lstm', 'ensemble'
+  modelVersion     String?
+  actualRevenue    Decimal? // Filled in after the date passes
+  createdAt        DateTime @default(now())
+  
+  @@map("predictions")
+}
