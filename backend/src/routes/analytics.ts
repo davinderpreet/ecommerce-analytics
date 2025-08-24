@@ -1,189 +1,227 @@
+// backend/src/routes/analytics.ts
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Channel } from '@prisma/client';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get dashboard metrics
+/** Helpers */
+function parseDateISO(s: string | undefined, fallback: Date): Date {
+  if (!s) return fallback;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? fallback : d;
+}
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function endOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+function dateKey(d: Date | string) {
+  const obj = typeof d === 'string' ? new Date(d) : d;
+  return obj.toISOString().slice(0, 10);
+}
+function toDollars(cents?: number | null) {
+  return ((cents ?? 0) / 100);
+}
+function pctGrowth(curr: number, prev: number) {
+  if (prev <= 0) return null;
+  return ((curr - prev) / prev) * 100;
+}
+
+async function getChannelMap() {
+  const channels = await prisma.channel.findMany();
+  const byId = new Map<string, Channel>();
+  const byCode = new Map<string, Channel>();
+  for (const c of channels) {
+    byId.set(c.id, c);
+    byCode.set(c.code, c);
+  }
+  return { byId, byCode };
+}
+
+/**
+ * /metrics
+ * Basic metrics for a date range (today by default).
+ * Query: start_date=YYYY-MM-DD, end_date=YYYY-MM-DD, platform=shopify|bestbuy|all
+ */
 router.get('/metrics', async (req, res) => {
   try {
-    const { start_date, end_date, platform } = req.query;
-    
-    // For now, return sample data structure that matches your frontend
-    // TODO: Replace with real database queries
-    const sampleMetrics = {
-      totalRevenue: 487650,
-      revenueGrowth: 12.5,
-      totalOrders: 7174,
-      totalProducts: 17436,
-      totalVisitors: 390120,
-      avgOrderValue: 67.95,
-      avgConversion: 2.84
-    };
-    
+    const { platform = 'all' } = req.query as { start_date?: string; end_date?: string; platform?: string };
+    const today = new Date();
+    const start = startOfDay(parseDateISO(req.query.start_date as string, today));
+    const end = endOfDay(parseDateISO(req.query.end_date as string, today));
+
+    const { byCode } = await getChannelMap();
+
+    const where: any = { createdAt: { gte: start, lte: end } };
+    if (platform === 'shopify' && byCode.get('shopify')) where.channelId = byCode.get('shopify')!.id;
+    if (platform === 'bestbuy' && byCode.get('bestbuy')) where.channelId = byCode.get('bestbuy')!.id;
+
+    const orders = await prisma.order.findMany({ where, select: { totalCents: true } });
+    const totalOrders = orders.length;
+    const totalRevenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const aovCents = totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0;
+
     res.json({
       success: true,
-      data: sampleMetrics,
       filters: {
-        start_date: start_date || '2024-07-25',
-        end_date: end_date || '2024-08-24',
-        platform: platform || 'all'
-      }
+        start_date: dateKey(start),
+        end_date: dateKey(end),
+        platform,
+      },
+      totalRevenue: toDollars(totalRevenueCents),
+      totalOrders,
+      avgOrderValue: toDollars(aovCents),
     });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch metrics'
-    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to fetch metrics' });
   }
 });
 
-// Get sales trend data
-router.get('/sales-trend', async (req, res) => {
-  try {
-    const { start_date, end_date } = req.query;
-    
-    // Generate sample daily sales data
-    const generateSalesData = () => {
-      const data = [];
-      const startDate = new Date('2024-07-25');
-      const endDate = new Date('2024-08-24');
-      const currentDate = new Date(startDate);
-
-      while (currentDate <= endDate) {
-        const dayOfWeek = currentDate.getDay();
-        const weekendMultiplier = dayOfWeek === 0 || dayOfWeek === 6 ? 0.8 : 1.2;
-        const randomVariation = 0.8 + Math.random() * 0.4;
-        
-        const baseBestbuy = 8000 + Math.random() * 4000;
-        const baseShopify = 6000 + Math.random() * 3000;
-        
-        const bestbuyRevenue = Math.floor(baseBestbuy * weekendMultiplier * randomVariation);
-        const shopifyRevenue = Math.floor(baseShopify * weekendMultiplier * randomVariation);
-        
-        data.push({
-          date: currentDate.toISOString().split('T')[0],
-          bestbuy: bestbuyRevenue,
-          shopify: shopifyRevenue,
-          total: bestbuyRevenue + shopifyRevenue,
-          orders: Math.floor((bestbuyRevenue + shopifyRevenue) / 68),
-          products: Math.floor((bestbuyRevenue + shopifyRevenue) / 28),
-          visitors: Math.floor((bestbuyRevenue + shopifyRevenue) * 0.8),
-          conversion: 2.1 + Math.random() * 1.5
-        });
-        
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      return data;
-    };
-    
-    res.json({
-      success: true,
-      data: generateSalesData(),
-      filters: {
-        start_date: start_date || '2024-07-25',
-        end_date: end_date || '2024-08-24'
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch sales trend'
-    });
-  }
-});
-
-// Get platform comparison
-router.get('/platform-comparison', async (req, res) => {
-  try {
-    const platformData = [
-      { name: 'Shopify', revenue: 234500, orders: 3450, growth: 15.2, color: '#96f2d7' },
-      { name: 'BestBuy', revenue: 253150, orders: 3724, growth: 9.8, color: '#74c0fc' }
-    ];
-    
-    res.json({
-      success: true,
-      data: platformData
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch platform comparison'
-    });
-  }
-});
-
-// Get top products
-router.get('/top-products', async (req, res) => {
-  try {
-    const { limit = 10, platform } = req.query;
-    
-    const topProducts = [
-      { name: 'iPhone 15 Pro', sales: 1250, revenue: 1562500, platform: 'bestbuy' },
-      { name: 'MacBook Air M2', sales: 890, revenue: 1068000, platform: 'bestbuy' },
-      { name: 'Samsung Galaxy S24', sales: 756, revenue: 680400, platform: 'shopify' },
-      { name: 'iPad Pro 12.9"', sales: 645, revenue: 774000, platform: 'shopify' },
-      { name: 'AirPods Pro', sales: 1120, revenue: 280000, platform: 'bestbuy' }
-    ].slice(0, Number(limit));
-    
-    res.json({
-      success: true,
-      data: topProducts,
-      filters: {
-        limit: Number(limit),
-        platform: platform || 'all'
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch top products'
-    });
-  }
-});
-
-// Get dashboard summary (all data in one call)
+/**
+ * /dashboard-summary
+ * Summary block used by the dashboard:
+ * - total revenue, orders, AOV in range (default 7d)
+ * - revenue growth vs prior same-length period
+ * - platform comparison
+ * - sales trend (daily)
+ */
 router.get('/dashboard-summary', async (req, res) => {
   try {
-    const { start_date, end_date, platform } = req.query;
-    
-    // This endpoint combines all dashboard data for efficiency
-    const summary = {
-      metrics: {
-        totalRevenue: 487650,
-        revenueGrowth: 12.5,
-        totalOrders: 7174,
-        totalProducts: 17436,
-        totalVisitors: 390120,
-        avgOrderValue: 67.95,
-        avgConversion: 2.84
-      },
-      platformComparison: [
-        { name: 'Shopify', revenue: 234500, orders: 3450, growth: 15.2, color: '#96f2d7' },
-        { name: 'BestBuy', revenue: 253150, orders: 3724, growth: 9.8, color: '#74c0fc' }
-      ],
-      topProducts: [
-        { name: 'iPhone 15 Pro', sales: 1250, revenue: 1562500, platform: 'bestbuy' },
-        { name: 'MacBook Air M2', sales: 890, revenue: 1068000, platform: 'bestbuy' },
-        { name: 'Samsung Galaxy S24', sales: 756, revenue: 680400, platform: 'shopify' }
-      ]
-    };
-    
+    const range = String(req.query.range ?? '7d'); // '7d' | '30d' | '90d'
+    const days = Number(range.replace('d', '')) || 7;
+
+    const end = endOfDay(new Date());
+    const start = startOfDay(new Date(new Date().setDate(end.getDate() - (days - 1))));
+    const prevEnd = endOfDay(new Date(new Date(start).setDate(start.getDate() - 1)));
+    const prevStart = startOfDay(new Date(new Date(prevEnd).setDate(prevEnd.getDate() - (days - 1))));
+
+    const [{ byId, byCode }] = await Promise.all([getChannelMap()]);
+
+    // Current period orders
+    const orders = await prisma.order.findMany({
+      where: { createdAt: { gte: start, lte: end } },
+      select: { channelId: true, createdAt: true, totalCents: true },
+    });
+
+    // Previous period orders (for growth calc)
+    const prevOrders = await prisma.order.findMany({
+      where: { createdAt: { gte: prevStart, lte: prevEnd } },
+      select: { totalCents: true },
+    });
+
+    // Aggregate current
+    const totalOrders = orders.length;
+    const revenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const aovCents = totalOrders ? Math.round(revenueCents / totalOrders) : 0;
+
+    // Platform comparison
+    const byChannel = new Map<string, { revenueCents: number; orders: number }>();
+    for (const o of orders) {
+      const key = o.channelId;
+      const agg = byChannel.get(key) || { revenueCents: 0, orders: 0 };
+      agg.revenueCents += (o.totalCents || 0);
+      agg.orders += 1;
+      byChannel.set(key, agg);
+    }
+    const platformComparison: Array<{ name: string; revenue: number; orders: number }> = [];
+    for (const [id, agg] of byChannel.entries()) {
+      const ch = byId.get(id);
+      platformComparison.push({
+        name: ch?.name || 'Unknown',
+        revenue: toDollars(agg.revenueCents),
+        orders: agg.orders,
+      });
+    }
+
+    // Sales trend (daily)
+    // We’ll assemble day buckets for the current period.
+    const trendMap = new Map<string, { revenueCents: number; orders: number }>();
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      trendMap.set(dateKey(d), { revenueCents: 0, orders: 0 });
+    }
+    for (const o of orders) {
+      const k = dateKey(o.createdAt);
+      const curr = trendMap.get(k);
+      if (curr) {
+        curr.revenueCents += (o.totalCents || 0);
+        curr.orders += 1;
+      }
+    }
+    const salesTrend = Array.from(trendMap.entries())
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, v]) => ({
+        date,
+        revenue: toDollars(v.revenueCents),
+        orders: v.orders,
+        aov: v.orders ? toDollars(Math.round(v.revenueCents / v.orders)) : 0,
+      }));
+
+    // Growth vs previous period
+    const prevRevenueCents = prevOrders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const revenueGrowth = pctGrowth(revenueCents, prevRevenueCents);
+
     res.json({
       success: true,
-      data: summary,
-      filters: {
-        start_date: start_date || '2024-07-25',
-        end_date: end_date || '2024-08-24',
-        platform: platform || 'all'
-      },
-      timestamp: new Date().toISOString()
+      range: { start: dateKey(start), end: dateKey(end), days },
+      totalRevenue: toDollars(revenueCents),
+      totalOrders,
+      avgOrderValue: toDollars(aovCents),
+      revenueGrowth, // % number or null
+      platformComparison,
+      salesTrend,
     });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch dashboard summary'
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to fetch dashboard summary' });
+  }
+});
+
+/**
+ * /sales-trend
+ * Returns daily revenue+orders for arbitrary start/end dates
+ */
+router.get('/sales-trend', async (req, res) => {
+  try {
+    const today = new Date();
+    const start = startOfDay(parseDateISO(req.query.start_date as string, new Date(new Date().setDate(today.getDate() - 6))));
+    const end = endOfDay(parseDateISO(req.query.end_date as string, today));
+
+    const orders = await prisma.order.findMany({
+      where: { createdAt: { gte: start, lte: end } },
+      select: { createdAt: true, totalCents: true },
     });
+
+    const dayMap = new Map<string, { revenueCents: number; orders: number }>();
+    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
+      dayMap.set(dateKey(d), { revenueCents: 0, orders: 0 });
+    }
+    for (const o of orders) {
+      const k = dateKey(o.createdAt);
+      const agg = dayMap.get(k)!;
+      agg.revenueCents += (o.totalCents || 0);
+      agg.orders += 1;
+    }
+
+    const trend = Array.from(dayMap.entries())
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, v]) => ({
+        date,
+        revenue: toDollars(v.revenueCents),
+        orders: v.orders,
+        aov: v.orders ? toDollars(Math.round(v.revenueCents / v.orders)) : 0,
+      }));
+
+    res.json({ success: true, start: dateKey(start), end: dateKey(end), data: trend });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to fetch sales trend' });
   }
 });
 
