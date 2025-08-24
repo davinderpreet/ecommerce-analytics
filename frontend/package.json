@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
+    "node": "18.x"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -18,8 +17,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
-    "serve": "serve -s build -p $PORT"
+    "test": "react-scripts test"
   },
   "browserslist": {
     "production": [
