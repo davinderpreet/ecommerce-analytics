@@ -1,3 +1,4 @@
+/* backend/src/integrations/shopify.ts */
 import fetch from "node-fetch";
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
@@ -6,7 +7,38 @@ const SHOP = process.env.SHOPIFY_SHOP_DOMAIN!;
 const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
 const API_VER = "2024-07";
 
-async function shopifyGraphQL<T>(query: string, variables: any = {}): Promise<T> {
+// Minimal response shapes so TS is happy:
+type MoneyResp = { shopMoney: { amount: string } };
+type LineItemResp = {
+  id: string;
+  title: string;
+  sku: string | null;
+  quantity: number;
+  originalUnitPriceSet: MoneyResp;
+  discountedTotalSet: MoneyResp;
+};
+type OrderResp = {
+  id: string;
+  name: string;
+  createdAt: string;
+  currencyCode: string;
+  subtotalPriceSet: MoneyResp;
+  totalTaxSet: MoneyResp;
+  totalShippingPriceSet: MoneyResp;
+  totalPriceSet: MoneyResp;
+  customer: { email: string | null } | null;
+  lineItems: { edges: { node: LineItemResp }[] };
+};
+type OrdersQueryResp = {
+  data?: {
+    orders?: {
+      edges?: { cursor: string; node: OrderResp }[];
+      pageInfo?: { hasNextPage: boolean; endCursor: string | null };
+    };
+  };
+};
+
+async function shopifyGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch(`https://${SHOP}/admin/api/${API_VER}/graphql.json`, {
     method: "POST",
     headers: {
@@ -16,18 +48,22 @@ async function shopifyGraphQL<T>(query: string, variables: any = {}): Promise<T>
     body: JSON.stringify({ query, variables }),
   });
   if (!res.ok) throw new Error(`Shopify GraphQL ${res.status}: ${await res.text()}`);
-  return res.json() as any;
+  return (await res.json()) as T;
 }
 
 async function ensureShopifyChannel() {
-  let ch = await prisma.channel.findUnique({ where: { code: "shopify" } });
+  let ch = await prisma.channel.findUnique({ where: { code: "shopify" } }).catch(() => null);
   if (!ch) ch = await prisma.channel.create({ data: { name: "Shopify", code: "shopify" } });
   return ch;
 }
 
-export async function syncShopifyOrders(days = 7) {
+export async function syncShopifyOrders(days = 7): Promise<void> {
+  if (!SHOP || !TOKEN) throw new Error("Missing SHOPIFY_SHOP_DOMAIN or SHOPIFY_ADMIN_ACCESS_TOKEN");
+
   const channel = await ensureShopifyChannel();
-  const since = new Date(); since.setDate(since.getDate() - days);
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
 
   const query = `
     query Orders($cursor: String, $since: DateTime) {
@@ -57,50 +93,70 @@ export async function syncShopifyOrders(days = 7) {
     }`;
 
   let cursor: string | null = null;
+
   do {
-    const data = await shopifyGraphQL<any>(query, { cursor, since: since.toISOString() });
+    // ✅ Explicitly type 'data' to avoid TS7022
+    const data: OrdersQueryResp = await shopifyGraphQL<OrdersQueryResp>(query, {
+      cursor,
+      since: since.toISOString(),
+    });
+
     const edges = data?.data?.orders?.edges ?? [];
     for (const e of edges) {
-      const o = e.node;
-      const cents = (x: string) => Math.round(parseFloat(x) * 100);
+      const o: OrderResp = e.node;
+      const toCents = (s: string) => Math.round(parseFloat(s || "0") * 100);
 
+      const subtotal = toCents(o.subtotalPriceSet.shopMoney.amount);
+      const tax = toCents(o.totalTaxSet.shopMoney.amount);
+      const ship = toCents(o.totalShippingPriceSet.shopMoney.amount);
+      const total = toCents(o.totalPriceSet.shopMoney.amount);
+
+      // Upsert order
       const order = await prisma.order.upsert({
         where: { channelRef: o.id },
         update: {
           number: o.name,
           createdAt: new Date(o.createdAt),
           currency: o.currencyCode,
-          subtotalCents: cents(o.subtotalPriceSet.shopMoney.amount),
-          taxCents:      cents(o.totalTaxSet.shopMoney.amount),
-          shippingCents: cents(o.totalShippingPriceSet.shopMoney.amount),
-          totalCents:    cents(o.totalPriceSet.shopMoney.amount),
+          subtotalCents: subtotal,
+          taxCents: tax,
+          shippingCents: ship,
+          totalCents: total,
           customerEmail: o.customer?.email ?? null,
         },
         create: {
-          channelId: (channel.id),
+          channelId: channel.id,
           channelRef: o.id,
           number: o.name,
           createdAt: new Date(o.createdAt),
           currency: o.currencyCode,
-          subtotalCents: cents(o.subtotalPriceSet.shopMoney.amount),
-          taxCents:      cents(o.totalTaxSet.shopMoney.amount),
-          shippingCents: cents(o.totalShippingPriceSet.shopMoney.amount),
-          totalCents:    cents(o.totalPriceSet.shopMoney.amount),
+          subtotalCents: subtotal,
+          taxCents: tax,
+          shippingCents: ship,
+          totalCents: total,
           customerEmail: o.customer?.email ?? null,
         },
       });
 
+      // Line items
       for (const liEdge of o.lineItems.edges) {
-        const li = liEdge.node;
-        const unit = Math.round(parseFloat(li.originalUnitPriceSet.shopMoney.amount) * 100);
-        const line = Math.round(parseFloat(li.discountedTotalSet.shopMoney.amount) * 100);
+        const li: LineItemResp = liEdge.node;
+        const unit = toCents(li.originalUnitPriceSet.shopMoney.amount);
+        const line = toCents(li.discountedTotalSet.shopMoney.amount);
+        const sku = li.sku || undefined;
 
-        let productId: string | undefined = undefined;
-        if (li.sku) {
-          let product = await prisma.product.findUnique({ where: { sku: li.sku } });
+        // Ensure product by SKU
+        let productId: string | undefined;
+        if (sku) {
+          let product = await prisma.product.findUnique({ where: { sku } });
           if (!product) {
             product = await prisma.product.create({
-              data: { channelId: channel.id, sku: li.sku, title: li.title, currency: o.currencyCode },
+              data: {
+                channelId: channel.id,
+                sku,
+                title: li.title,
+                currency: o.currencyCode,
+              },
             });
           }
           productId = product.id;
@@ -110,7 +166,7 @@ export async function syncShopifyOrders(days = 7) {
           data: {
             orderId: order.id,
             productId,
-            sku: li.sku || undefined,
+            sku,
             title: li.title,
             quantity: li.quantity,
             priceCents: unit,
@@ -119,7 +175,10 @@ export async function syncShopifyOrders(days = 7) {
         });
       }
     }
-    const pageInfo = data?.data?.orders?.pageInfo;
-    cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
+
+    // ✅ Explicitly type 'pageInfo' to avoid TS7022
+    const pageInfo: { hasNextPage?: boolean; endCursor?: string | null } =
+      (data?.data?.orders?.pageInfo as any) ?? {};
+    cursor = pageInfo?.hasNextPage ? (pageInfo.endCursor ?? null) : null;
   } while (cursor);
 }
