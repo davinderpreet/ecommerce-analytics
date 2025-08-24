@@ -3,8 +3,8 @@ import { syncShopifyOrders } from "../integrations/shopify";
 
 const router = express.Router();
 
-// Manual trigger: POST /api/v1/sync/shopify?days=7
-router.post("/shopify", async (req, res) => {
+/** Trigger from browser for easy testing (GET/POST both allowed) */
+router.all("/shopify", async (req, res) => {
   const days = Number(req.query.days ?? 7);
   try {
     await syncShopifyOrders(days);
@@ -15,4 +15,3 @@ router.post("/shopify", async (req, res) => {
 });
 
 export default router;
-
