@@ -24,14 +24,15 @@ function HomePage() {
 
 function App() {
   return (
-    <Router>
-      <div className="App">
+    <div className="App">
+      <h1>Test App Loading</h1>
+      <Router>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
-      </div>
-    </Router>
+      </Router>
+    </div>
   );
 }
 
