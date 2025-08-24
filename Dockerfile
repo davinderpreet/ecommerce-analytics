@@ -18,8 +18,8 @@ RUN npm run build
 # Install serve globally
 RUN npm install -g serve
 
-# Expose the port Railway expects
-EXPOSE $PORT
+# Expose port
+EXPOSE 3000
 
-# Start the app on Railway's dynamic port
+# Use correct serve syntax with port fallback
 CMD ["sh", "-c", "serve -s build -l ${PORT:-3000}"]
