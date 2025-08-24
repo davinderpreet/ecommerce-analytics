@@ -1,0 +1,20 @@
+[variables]
+NODE_ENV = 'production'
+
+[phases.setup]
+nixPkgs = ['nodejs-18_x', 'npm-8_19_4']
+
+[phases.install]
+cmds = [
+  'cd frontend',
+  'npm ci'
+]
+
+[phases.build] 
+cmds = [
+  'cd frontend', 
+  'npm run build'
+]
+
+[start]
+cmd = 'cd frontend && npx serve -s build -p $PORT'
