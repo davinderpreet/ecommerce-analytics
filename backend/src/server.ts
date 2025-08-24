@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 // Import routes
 import analyticsRoutes from './routes/analytics';
 import healthRoutes from './routes/health';
+import syncRoutes from './routes/sync';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use(express.json());
 // Routes
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/sync', syncRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
