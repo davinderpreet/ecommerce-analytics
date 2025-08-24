@@ -22,4 +22,4 @@ RUN npm install -g serve
 EXPOSE $PORT
 
 # Start the app on Railway's dynamic port
-CMD ["sh", "-c", "serve -s build -l $PORT"]
+CMD ["sh", "-c", "serve -s build -l ${PORT:-3000}"]
