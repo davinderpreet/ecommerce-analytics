@@ -1,15 +1,13 @@
-// backend/src/integrations/shopify.ts
 import fetch from "node-fetch";
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 const SHOP = process.env.SHOPIFY_SHOP_DOMAIN!;
 const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
-
-const GQL = "2024-07"; // choose stable version
+const API_VER = "2024-07"; // stable admin version
 
 async function shopifyGraphQL<T>(query: string, variables: any = {}): Promise<T> {
-  const res = await fetch(`https://${SHOP}/admin/api/${GQL}/graphql.json`, {
+  const res = await fetch(`https://${SHOP}/admin/api/${API_VER}/graphql.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -19,29 +17,23 @@ async function shopifyGraphQL<T>(query: string, variables: any = {}): Promise<T>
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Shopify GraphQL error ${res.status}: ${text}`);
+    throw new Error(`Shopify GraphQL ${res.status}: ${text}`);
   }
   return res.json() as any;
 }
 
-export async function ensureShopifyChannel() {
-  let channel = await prisma.channel.findUnique({ where: { code: "shopify" } });
-  if (!channel) {
-    channel = await prisma.channel.create({
-      data: { name: "Shopify", code: "shopify" },
-    });
-  }
-  return channel;
+async function ensureShopifyChannel() {
+  let ch = await prisma.channel.findUnique({ where: { code: "shopify" } });
+  if (!ch) ch = await prisma.channel.create({ data: { name: "Shopify", code: "shopify" } });
+  return ch;
 }
 
-// Pull last N days of orders
 export async function syncShopifyOrders(days = 7) {
   const channel = await ensureShopifyChannel();
 
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  // REST is simpler for orders if you prefer; here’s GraphQL with pagination
   const query = `
     query Orders($cursor: String, $since: DateTime) {
       orders(first: 100, query: $since ? "created_at:>=$since" : null, after: $cursor, reverse: true) {
@@ -78,7 +70,7 @@ export async function syncShopifyOrders(days = 7) {
   let cursor: string | null = null;
   do {
     const data = await shopifyGraphQL<any>(query, { cursor, since: since.toISOString() });
-    const edges = data.data.orders.edges;
+    const edges = data?.data?.orders?.edges ?? [];
     for (const e of edges) {
       const o = e.node;
 
@@ -87,6 +79,7 @@ export async function syncShopifyOrders(days = 7) {
       const ship = Math.round(parseFloat(o.totalShippingPriceSet.shopMoney.amount) * 100);
       const total = Math.round(parseFloat(o.totalPriceSet.shopMoney.amount) * 100);
 
+      // Upsert the order
       const order = await prisma.order.upsert({
         where: { channelRef: o.id },
         update: {
@@ -118,9 +111,9 @@ export async function syncShopifyOrders(days = 7) {
         const li = liEdge.node;
         const unit = Math.round(parseFloat(li.originalUnitPriceSet.shopMoney.amount) * 100);
         const lineTotal = Math.round(parseFloat(li.discountedTotalSet.shopMoney.amount) * 100);
+        const sku = li.sku || undefined;
 
         // Ensure product by SKU
-        const sku = li.sku || undefined;
         let productId: string | undefined = undefined;
         if (sku) {
           let product = await prisma.product.findUnique({ where: { sku } });
@@ -130,7 +123,6 @@ export async function syncShopifyOrders(days = 7) {
                 channelId: channel.id,
                 sku,
                 title: li.title,
-                channelRef: undefined,
                 currency: o.currencyCode,
               },
             });
@@ -142,7 +134,7 @@ export async function syncShopifyOrders(days = 7) {
           data: {
             orderId: order.id,
             productId,
-            sku: sku,
+            sku,
             title: li.title,
             quantity: li.quantity,
             priceCents: unit,
@@ -151,28 +143,7 @@ export async function syncShopifyOrders(days = 7) {
         });
       }
     }
-    const pi = data.data.orders.pageInfo;
-    cursor = pi.hasNextPage ? pi.endCursor : null;
+    const pageInfo = data?.data?.orders?.pageInfo;
+    cursor = pageInfo?.hasNextPage ? pageInfo.endCursor : null;
   } while (cursor);
-
-  // Aggregate daily metrics
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO daily_metrics (id, date, channel_id, revenue_cents, orders, visitors, conversion_pct, aov_cents)
-    SELECT gen_random_uuid(),
-           DATE(o.created_at) as date,
-           '${channel.id}' as channel_id,
-           SUM(o.total_cents) as revenue_cents,
-           COUNT(*) as orders,
-           NULL::int as visitors,
-           NULL::float as conversion_pct,
-           (CASE WHEN COUNT(*)=0 THEN 0 ELSE SUM(o.total_cents)/COUNT(*) END)::int as aov_cents
-    FROM orders o
-    WHERE o.channel_id='${channel.id}'
-      AND o.created_at >= NOW() - INTERVAL '${days} days'
-    GROUP BY DATE(o.created_at)
-  ON CONFLICT (date, channel_id) DO UPDATE SET
-    revenue_cents = EXCLUDED.revenue_cents,
-    orders = EXCLUDED.orders,
-    aov_cents = EXCLUDED.aov_cents;
-  `);
 }
