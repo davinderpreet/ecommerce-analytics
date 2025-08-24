@@ -1,6 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
+// backend/prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -16,117 +14,113 @@ model User {
   companyName String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  platforms Platform[]
-  
+
   @@map("users")
 }
 
-model Platform {
-  id            String   @id @default(cuid())
-  name          String   // 'shopify', 'bestbuy', etc.
-  apiCredentials Json?   // Store encrypted API keys
-  isActive      Boolean  @default(true)
-  lastSyncAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  products      Product[]
-  orders        Order[]
-  analyticsDaily AnalyticsDaily[]
-  
-  @@map("platforms")
+model Channel {
+  id        String   @id @default(cuid())
+  name      String   // 'Shopify' | 'BestBuy'
+  code      String   @unique // 'shopify' | 'bestbuy'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products  Product[]
+  orders    Order[]
+
+  @@map("channels")
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  sku         String
-  name        String
-  description String?
-  price       Decimal
-  category    String?
-  imageUrl    String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  platformId String
-  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
-  
-  orderItems OrderItem[]
-  
-  @@unique([sku, platformId])
+  id              String   @id @default(cuid())
+  channelId       String
+  channel         Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelRef      String?  // Shopify product id / Mirakl offer-sku or product-sku
+  sku             String   @unique
+  title           String
+  active          Boolean  @default(true)
+  priceCents      Int?     // optional normalized price
+  currency        String?  // 'CAD'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  inventory       Inventory?
+  orderItems      OrderItem[]
+
   @@map("products")
 }
 
-model Order {
+model Inventory {
   id          String   @id @default(cuid())
-  orderNumber String
-  total       Decimal
-  subtotal    Decimal?
-  tax         Decimal?
-  shipping    Decimal?
-  status      String   // 'pending', 'paid', 'shipped', 'delivered', 'cancelled'
-  customerEmail String?
-  customerName  String?
-  orderDate   DateTime
-  createdAt   DateTime @default(now())
+  productId   String   @unique
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity    Int      @default(0)
   updatedAt   DateTime @updatedAt
-  
-  platformId String
-  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
-  
-  orderItems OrderItem[]
-  
-  @@unique([orderNumber, platformId])
+  createdAt   DateTime @default(now())
+
+  @@map("inventory")
+}
+
+model Order {
+  id            String    @id @default(cuid())
+  channelId     String
+  channel       Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelRef    String    @unique // Shopify order id / Mirakl order id
+  number        String?
+  createdAt     DateTime
+  updatedAt     DateTime  @updatedAt
+  currency      String    // 'CAD'
+  subtotalCents Int
+  taxCents      Int
+  shippingCents Int
+  totalCents    Int
+  customerEmail String?
+
+  items         OrderItem[]
+
+  @@index([createdAt])
   @@map("orders")
 }
 
 model OrderItem {
-  id       String  @id @default(cuid())
-  quantity Int
-  price    Decimal
-  total    Decimal
-  
-  orderId   String
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku           String?
+  title         String
+  quantity      Int
+  priceCents    Int      // unit price
+  totalCents    Int      // line total
+
   @@map("order_items")
 }
 
-model AnalyticsDaily {
-  id           String   @id @default(cuid())
-  date         DateTime @db.Date
-  revenue      Decimal
-  orders       Int
-  productsSold Int
-  visitors     Int?
-  conversion   Decimal?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  platformId String
-  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
-  
-  @@unique([date, platformId])
-  @@map("analytics_daily")
+model DailyMetric {
+  id            String   @id @default(cuid())
+  date          DateTime @db.Date
+  channelId     String
+  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  revenueCents  Int
+  orders        Int
+  visitors      Int?
+  conversionPct Float?   // 0..100
+  aovCents      Int?
+
+  @@unique([date, channelId])
+  @@map("daily_metrics")
 }
 
 model Prediction {
   id               String   @id @default(cuid())
   date             DateTime @db.Date
-  predictedRevenue Decimal
-  confidence       Decimal  // 0.0 to 1.0
-  modelType        String   // 'arima', 'lstm', 'ensemble'
+  predictedRevenue Int      // cents
+  confidence       Float    // 0.0..1.0
+  modelType        String   // 'arima' | 'lstm' | 'ensemble'
   modelVersion     String?
-  actualRevenue    Decimal? // Filled in after the date passes
+  actualRevenue    Int?
   createdAt        DateTime @default(now())
-  
+
   @@map("predictions")
 }
