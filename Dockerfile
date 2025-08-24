@@ -22,4 +22,4 @@ RUN npm install -g serve
 EXPOSE 3000
 
 # Use correct serve syntax with port fallback
-CMD ["sh", "-c", "serve -s build -l ${PORT:-3000}"]
+CMD ["sh", "-c", "serve -s build -p ${PORT:-3000}"]
