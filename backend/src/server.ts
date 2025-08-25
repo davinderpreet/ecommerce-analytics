@@ -79,23 +79,38 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
       return;
     }
     
-    // Now try the actual sync
-    console.log('🔄 Running syncShopifyOrders...');
+    // And replace your sync endpoint with this simpler version:
+app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
+  console.log('🧪 SYNC ENDPOINT HIT - Starting debug');
+  
+  const days = Number(req.query.days ?? 7);
+  console.log('🧪 Days:', days);
+  console.log('🧪 Shop domain:', process.env.SHOPIFY_SHOP_DOMAIN);
+  console.log('🧪 Token exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
+  
+  try {
+    console.log('🧪 About to call syncShopifyOrders');
     await syncShopifyOrders(days);
+    console.log('🧪 syncShopifyOrders completed without error');
     
-    console.log('✅ Shopify sync completed');
     res.json({ ok: true, source: 'shopify', days });
-    
   } catch (error: any) {
-    console.error('❌ Shopify sync failed with error:', error);
-    console.error('❌ Error stack:', error.stack);
-    res.status(500).json({ 
-      ok: false, 
-      source: 'shopify', 
-      error: error?.message || 'sync_failed',
-      stack: error?.stack 
-    });
+    console.error('🧪 syncShopifyOrders threw an error:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
   }
+});
+
+app.get('/api/v1/test-log', (req: Request, res: Response) => {
+  console.log('🧪 TEST LOG - This endpoint was hit!');
+  console.log('🧪 Environment variables:');
+  console.log('  SHOPIFY_SHOP_DOMAIN:', process.env.SHOPIFY_SHOP_DOMAIN);
+  console.log('  SHOPIFY_ADMIN_ACCESS_TOKEN exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
+  
+  res.json({
+    message: 'Test endpoint hit - check Railway logs',
+    shop: process.env.SHOPIFY_SHOP_DOMAIN,
+    tokenExists: !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN
+  });
 });
 
 // Analytics endpoints
