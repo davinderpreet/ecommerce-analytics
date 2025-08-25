@@ -74,10 +74,11 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     since.setDate(since.getDate() - days);
     console.log('🧪 Fetching orders since:', since.toISOString());
     
-    // GraphQL query - fixed syntax
+    // GraphQL query - fixed to use the variable properly
+    const sinceDate = since.toISOString();
     const query = `
-      query Orders($since: DateTime) {
-        orders(first: 25, query: "created_at:>=$since", reverse: true) {
+      query {
+        orders(first: 25, query: "created_at:>=${sinceDate}", reverse: true) {
           edges {
             node {
               id name createdAt currencyCode
@@ -101,8 +102,7 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
         'X-Shopify-Access-Token': TOKEN,
       },
       body: JSON.stringify({ 
-        query, 
-        variables: { since: since.toISOString() } 
+        query
       }),
     });
     
