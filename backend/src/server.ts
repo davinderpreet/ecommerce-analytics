@@ -49,7 +49,8 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     if (!shop || !token) {
       const error = `Missing credentials: shop=${!!shop}, token=${!!token}`;
       console.error('❌', error);
-      return res.status(400).json({ ok: false, error });
+      res.status(400).json({ ok: false, error });
+      return;
     }
     
     console.log('🔄 Testing Shopify connection...');
@@ -65,7 +66,8 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     if (!testResponse.ok) {
       const errorText = await testResponse.text();
       console.error('❌ Shopify connection failed:', testResponse.status, errorText);
-      return res.status(500).json({ ok: false, error: `Shopify API error: ${testResponse.status}` });
+      res.status(500).json({ ok: false, error: `Shopify API error: ${testResponse.status}` });
+      return;
     }
     
     const testData: any = await testResponse.json();
@@ -73,7 +75,8 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     
     if (testData.errors) {
       console.error('❌ Shopify GraphQL errors:', testData.errors);
-      return res.status(500).json({ ok: false, error: 'Shopify GraphQL errors', details: testData.errors });
+      res.status(500).json({ ok: false, error: 'Shopify GraphQL errors', details: testData.errors });
+      return;
     }
     
     // Now try the actual sync
