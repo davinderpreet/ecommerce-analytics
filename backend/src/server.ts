@@ -14,6 +14,53 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
+// IMPROVED: Robust date handling utilities
+const DateUtils = {
+  // Parse date string to proper start/end of day
+  parseFilterDate: (dateStr: string | undefined, defaultDate?: Date) => {
+    if (!dateStr) {
+      if (!defaultDate) return null;
+      dateStr = defaultDate.toISOString().slice(0, 10);
+    }
+    
+    // Handle YYYY-MM-DD format
+    const date = new Date(dateStr + 'T00:00:00.000Z');
+    if (isNaN(date.getTime())) {
+      throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
+    }
+    
+    return {
+      startOfDay: new Date(dateStr + 'T00:00:00.000Z'),
+      endOfDay: new Date(dateStr + 'T23:59:59.999Z'),
+      dateStr
+    };
+  },
+
+  // Get date range for relative periods (7d, 30d, etc)
+  getRelativeDateRange: (days: number) => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    
+    const start = new Date(end);
+    start.setDate(end.getDate() - (days - 1));
+    start.setHours(0, 0, 0, 0);
+    
+    return {
+      start,
+      end,
+      startStr: start.toISOString().slice(0, 10),
+      endStr: end.toISOString().slice(0, 10),
+      days
+    };
+  },
+
+  // Format date for consistent API responses
+  formatDateKey: (date: Date) => date.toISOString().slice(0, 10),
+  
+  // Convert cents to dollars
+  toDollars: (cents: number | null | undefined) => ((cents ?? 0) / 100)
+};
+
 // Test logging endpoint
 app.get('/api/v1/test-log', (req: Request, res: Response) => {
   console.log('🧪 TEST LOG - This endpoint was hit!');
@@ -69,13 +116,12 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     }
     console.log('🧪 Channel ID:', channel.id);
     
-    // Calculate date range
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-    console.log('🧪 Fetching orders since:', since.toISOString());
+    // Calculate date range using improved date utilities
+    const dateRange = DateUtils.getRelativeDateRange(days);
+    console.log('🧪 Fetching orders since:', dateRange.start.toISOString());
     
-    // GraphQL query - fixed to use the variable properly
-    const sinceDate = since.toISOString();
+    // GraphQL query - removed customer field due to permissions
+    const sinceDate = dateRange.start.toISOString();
     const query = `
       query {
         orders(first: 25, query: "created_at:>=${sinceDate}", reverse: true) {
@@ -86,7 +132,6 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
               subtotalPriceSet { shopMoney { amount } }
               totalTaxSet { shopMoney { amount } }
               totalShippingPriceSet { shopMoney { amount } }
-              customer { email }
             }
           }
         }
@@ -101,9 +146,7 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': TOKEN,
       },
-      body: JSON.stringify({ 
-        query
-      }),
+      body: JSON.stringify({ query }),
     });
     
     console.log('🧪 GraphQL response status:', response.status);
@@ -131,7 +174,7 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     let processedCount = 0;
     for (const edge of orders) {
       const order = edge.node;
-      console.log('🧪 Processing order:', order.name, 'Total:', order.totalPriceSet.shopMoney.amount);
+      console.log('🧪 Processing order:', order.name, 'Total:', order.totalPriceSet.shopMoney.amount, 'Date:', order.createdAt);
       
       const totalCents = Math.round(parseFloat(order.totalPriceSet.shopMoney.amount) * 100);
       const subtotalCents = Math.round(parseFloat(order.subtotalPriceSet.shopMoney.amount) * 100);
@@ -150,11 +193,11 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
             taxCents,
             shippingCents,
             totalCents,
-            customerEmail: order.customer?.email ?? null,
+            customerEmail: null, // Remove customer data due to permissions
           },
         });
         
-        console.log('🧪 Saved order:', savedOrder.number, 'ID:', savedOrder.id);
+        console.log('🧪 Saved order:', savedOrder.number, 'ID:', savedOrder.id, 'Created:', savedOrder.createdAt);
         processedCount++;
         
       } catch (dbError: any) {
@@ -177,143 +220,272 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   }
 });
 
-// Analytics endpoints
+// FIXED: Dashboard summary endpoint with proper date handling
 app.get('/api/v1/analytics/dashboard-summary', async (req: Request, res: Response) => {
   try {
+    console.log('📊 Dashboard summary request:', req.query);
+    
     const range = String(req.query.range ?? '7d');
+    const platform = String(req.query.platform ?? 'all');
     const days = Number(range.replace('d', '')) || 7;
-
-    const end = new Date(); 
-    end.setHours(23,59,59,999);
-    const start = new Date(end); 
-    start.setHours(0,0,0,0); 
-    start.setDate(end.getDate() - (days - 1));
-
-    const channels = await prisma.channel.findMany();
-    const orders = await prisma.order.findMany({ 
-      where: { createdAt: { gte: start, lte: end } } 
-    });
-
+    
+    const dateRange = DateUtils.getRelativeDateRange(days);
+    console.log('📊 Date range:', dateRange.startStr, 'to', dateRange.endStr);
+    
+    // Build where clause with proper date filtering and platform filtering
+    let whereClause: any = {
+      createdAt: { gte: dateRange.start, lte: dateRange.end }
+    };
+    
+    // Add platform filtering
+    if (platform !== 'all') {
+      const channel = await prisma.channel.findUnique({ where: { code: platform } });
+      if (channel) {
+        whereClause.channelId = channel.id;
+      }
+    }
+    
+    console.log('📊 Where clause:', whereClause);
+    
+    const [channels, orders] = await Promise.all([
+      prisma.channel.findMany(),
+      prisma.order.findMany({ where: whereClause })
+    ]);
+    
+    console.log('📊 Found orders:', orders.length);
+    orders.forEach(o => console.log('📊 Order:', o.number, 'Date:', o.createdAt, 'Total:', DateUtils.toDollars(o.totalCents)));
+    
     const totalOrders = orders.length;
     const revenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
-    const totalRevenue = revenueCents / 100;
+    const totalRevenue = DateUtils.toDollars(revenueCents);
     const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
 
-    // Build sales trend
+    // Build platform comparison
+    const channelMap = new Map(channels.map(c => [c.id, c]));
+    const platformStats = new Map<string, { revenueCents: number; orders: number }>();
+    
+    for (const order of orders) {
+      const channelId = order.channelId;
+      const stats = platformStats.get(channelId) || { revenueCents: 0, orders: 0 };
+      stats.revenueCents += (order.totalCents || 0);
+      stats.orders += 1;
+      platformStats.set(channelId, stats);
+    }
+    
+    const platformComparison = Array.from(platformStats.entries()).map(([channelId, stats]) => ({
+      name: channelMap.get(channelId)?.name || 'Unknown',
+      revenue: DateUtils.toDollars(stats.revenueCents),
+      orders: stats.orders,
+      color: channelMap.get(channelId)?.name.toLowerCase().includes('shopify') ? '#96BF47' : '#0066CC'
+    }));
+
+    // Build sales trend (daily buckets)
     const trendMap = new Map<string, { revenueCents: number; orders: number }>();
     for (let i = 0; i < days; i++) {
-      const d = new Date(start); 
-      d.setDate(start.getDate() + i);
-      const dateKey = d.toISOString().slice(0,10);
+      const d = new Date(dateRange.start);
+      d.setDate(dateRange.start.getDate() + i);
+      const dateKey = DateUtils.formatDateKey(d);
       trendMap.set(dateKey, { revenueCents: 0, orders: 0 });
     }
     
-    for (const o of orders) {
-      const dateKey = o.createdAt.toISOString().slice(0,10);
+    for (const order of orders) {
+      const dateKey = DateUtils.formatDateKey(order.createdAt);
       const trend = trendMap.get(dateKey);
       if (trend) {
-        trend.revenueCents += (o.totalCents || 0);
+        trend.revenueCents += (order.totalCents || 0);
         trend.orders += 1;
       }
     }
 
     const salesTrend = Array.from(trendMap.entries())
-      .sort(([a],[b]) => a < b ? -1 : 1)
+      .sort(([a], [b]) => a < b ? -1 : 1)
       .map(([date, v]) => ({
         date,
-        revenue: v.revenueCents / 100,
+        revenue: DateUtils.toDollars(v.revenueCents),
         orders: v.orders,
-        aov: v.orders ? (v.revenueCents / 100) / v.orders : 0
+        aov: v.orders ? DateUtils.toDollars(Math.round(v.revenueCents / v.orders)) : 0
       }));
+
+    console.log('📊 Sales trend:', salesTrend);
 
     res.json({
       success: true,
-      range: { start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10), days },
+      range: { start: dateRange.startStr, end: dateRange.endStr, days },
       totalRevenue,
       totalOrders,
       avgOrderValue,
       revenueGrowth: null,
-      platformComparison: [],
+      platformComparison,
       salesTrend,
     });
   } catch (e: any) {
+    console.error('📊 Dashboard summary error:', e);
     res.status(500).json({ success: false, error: e?.message });
   }
 });
 
+// FIXED: Metrics endpoint with proper date handling
 app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
   try {
+    console.log('📈 Metrics request:', req.query);
+    
     const platform = String(req.query.platform ?? 'all');
-    const today = new Date();
-    const start = new Date(req.query.start_date as string || today.toISOString().slice(0,10));
-    const end = new Date(req.query.end_date as string || today.toISOString().slice(0,10));
-
+    const startDateStr = req.query.start_date as string;
+    const endDateStr = req.query.end_date as string;
+    
+    if (!startDateStr || !endDateStr) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'start_date and end_date are required' 
+      });
+    }
+    
+    // Parse dates with proper timezone handling
+    const startDate = DateUtils.parseFilterDate(startDateStr);
+    const endDate = DateUtils.parseFilterDate(endDateStr);
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid date format. Use YYYY-MM-DD' 
+      });
+    }
+    
+    console.log('📈 Date range:', startDate.dateStr, 'to', endDate.dateStr);
+    console.log('📈 Time range:', startDate.startOfDay, 'to', endDate.endOfDay);
+    
+    // Build where clause
+    let whereClause: any = {
+      createdAt: { gte: startDate.startOfDay, lte: endDate.endOfDay }
+    };
+    
+    // Add platform filtering
+    if (platform !== 'all') {
+      const channel = await prisma.channel.findUnique({ where: { code: platform } });
+      if (channel) {
+        whereClause.channelId = channel.id;
+        console.log('📈 Filtering by channel:', channel.name, channel.id);
+      }
+    }
+    
     const orders = await prisma.order.findMany({ 
-      where: { createdAt: { gte: start, lte: end } },
-      select: { totalCents: true }
+      where: whereClause,
+      select: { totalCents: true, createdAt: true, number: true }
     });
+    
+    console.log('📈 Found orders:', orders.length);
+    orders.forEach(o => console.log('📈 Order:', o.number, 'Date:', o.createdAt, 'Total:', DateUtils.toDollars(o.totalCents)));
     
     const totalOrders = orders.length;
     const totalRevenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
     const avgOrderValueCents = totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0;
 
-    res.json({
+    const result = {
       success: true,
       filters: { 
-        start_date: start.toISOString().slice(0,10), 
-        end_date: end.toISOString().slice(0,10), 
+        start_date: startDate.dateStr, 
+        end_date: endDate.dateStr, 
         platform 
       },
-      totalRevenue: totalRevenueCents / 100,
+      totalRevenue: DateUtils.toDollars(totalRevenueCents),
       totalOrders,
-      avgOrderValue: avgOrderValueCents / 100,
-    });
+      avgOrderValue: DateUtils.toDollars(avgOrderValueCents),
+    };
+    
+    console.log('📈 Metrics result:', result);
+    res.json(result);
+    
   } catch (e: any) {
+    console.error('📈 Metrics error:', e);
     res.status(500).json({ success: false, error: e?.message });
   }
 });
 
+// FIXED: Sales trend endpoint with proper date handling
 app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => {
   try {
-    const today = new Date();
-    const start = new Date(req.query.start_date as string || new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0,10));
-    const end = new Date(req.query.end_date as string || today.toISOString().slice(0,10));
-
-    const orders = await prisma.order.findMany({
-      where: { createdAt: { gte: start, lte: end } },
-      select: { createdAt: true, totalCents: true },
-    });
-
-    const dayMap = new Map<string, { revenueCents: number; orders: number }>();
-    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86_400_000)) {
-      dayMap.set(d.toISOString().slice(0,10), { revenueCents: 0, orders: 0 });
+    console.log('📉 Sales trend request:', req.query);
+    
+    const startDateStr = req.query.start_date as string;
+    const endDateStr = req.query.end_date as string;
+    const platform = String(req.query.platform ?? 'all');
+    
+    if (!startDateStr || !endDateStr) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'start_date and end_date are required' 
+      });
     }
     
-    for (const o of orders) {
-      const dateKey = o.createdAt.toISOString().slice(0,10);
+    const startDate = DateUtils.parseFilterDate(startDateStr);
+    const endDate = DateUtils.parseFilterDate(endDateStr);
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid date format. Use YYYY-MM-DD' 
+      });
+    }
+    
+    console.log('📉 Date range:', startDate.dateStr, 'to', endDate.dateStr);
+    
+    // Build where clause
+    let whereClause: any = {
+      createdAt: { gte: startDate.startOfDay, lte: endDate.endOfDay }
+    };
+    
+    if (platform !== 'all') {
+      const channel = await prisma.channel.findUnique({ where: { code: platform } });
+      if (channel) {
+        whereClause.channelId = channel.id;
+      }
+    }
+
+    const orders = await prisma.order.findMany({
+      where: whereClause,
+      select: { createdAt: true, totalCents: true, number: true },
+    });
+
+    console.log('📉 Found orders:', orders.length);
+
+    // Create day buckets for the entire range
+    const dayMap = new Map<string, { revenueCents: number; orders: number }>();
+    
+    for (let d = new Date(startDate.startOfDay); d <= endDate.endOfDay; d = new Date(d.getTime() + 86_400_000)) {
+      const dateKey = DateUtils.formatDateKey(d);
+      dayMap.set(dateKey, { revenueCents: 0, orders: 0 });
+    }
+    
+    // Fill in actual data
+    for (const order of orders) {
+      const dateKey = DateUtils.formatDateKey(order.createdAt);
       const agg = dayMap.get(dateKey);
       if (agg) {
-        agg.revenueCents += (o.totalCents || 0);
+        agg.revenueCents += (order.totalCents || 0);
         agg.orders += 1;
+        console.log('📉 Adding order', order.number, 'to', dateKey, '- Total so far:', DateUtils.toDollars(agg.revenueCents));
       }
     }
 
     const trend = Array.from(dayMap.entries())
-      .sort(([a],[b]) => a < b ? -1 : 1)
+      .sort(([a], [b]) => a < b ? -1 : 1)
       .map(([date, v]) => ({
         date,
-        revenue: v.revenueCents / 100,
+        revenue: DateUtils.toDollars(v.revenueCents),
         orders: v.orders,
-        aov: v.orders ? (v.revenueCents / 100) / v.orders : 0
+        aov: v.orders ? DateUtils.toDollars(Math.round(v.revenueCents / v.orders)) : 0
       }));
+
+    console.log('📉 Trend result:', trend);
 
     res.json({ 
       success: true, 
-      start: start.toISOString().slice(0,10), 
-      end: end.toISOString().slice(0,10), 
+      start: startDate.dateStr, 
+      end: endDate.dateStr, 
       data: trend 
     });
   } catch (e: any) {
+    console.error('📉 Sales trend error:', e);
     res.status(500).json({ success: false, error: e?.message });
   }
 });
@@ -322,13 +494,16 @@ app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => 
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'E-commerce Analytics API',
-    version: '1.0.0',
+    version: '2.0.0',
     status: 'running',
+    features: ['Multi-platform support', 'Robust date handling', 'Real-time sync'],
     endpoints: [
       'GET /api/v1/health',
       'GET /api/v1/test-log',
       'GET /api/v1/sync/shopify?days=7',
-      'GET /api/v1/analytics/dashboard-summary?range=7d'
+      'GET /api/v1/analytics/dashboard-summary?range=7d',
+      'GET /api/v1/analytics/metrics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
+      'GET /api/v1/analytics/sales-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD'
     ]
   });
 });
@@ -342,7 +517,8 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
-  console.log('📊 E-commerce Analytics API ready');
+  console.log('📊 E-commerce Analytics API v2.0 ready');
+  console.log('🔧 Features: Multi-platform + Robust date handling');
 });
 
 export default app;
