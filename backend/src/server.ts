@@ -1,6 +1,34 @@
-// Replace the sync endpoint in your backend/src/server.ts with this:
+// backend/src/server.ts - Complete file
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
 
-app.all('/api/v1/sync/shopify', async (req, res) => {
+// Import your sync function
+import { syncShopifyOrders } from './integrations/shopify';
+
+dotenv.config();
+
+const app = express();
+const port = Number(process.env.PORT) || 8080;
+const prisma = new PrismaClient();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Health endpoint
+app.get('/api/v1/health', async (req: Request, res: Response) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ api: 'running', database: 'ok', ts: new Date().toISOString() });
+  } catch (e: any) {
+    res.status(500).json({ api: 'running', database: 'error', error: e?.message });
+  }
+});
+
+// Shopify sync endpoint with detailed debugging
+app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   const days = Number(req.query.days ?? 7);
   
   console.log('🔄 Starting Shopify sync for', days, 'days');
@@ -40,7 +68,7 @@ app.all('/api/v1/sync/shopify', async (req, res) => {
       return res.status(500).json({ ok: false, error: `Shopify API error: ${testResponse.status}` });
     }
     
-    const testData = await testResponse.json();
+    const testData: any = await testResponse.json();
     console.log('✅ Shopify connected to shop:', testData.data?.shop?.name);
     
     if (testData.errors) {
@@ -66,3 +94,172 @@ app.all('/api/v1/sync/shopify', async (req, res) => {
     });
   }
 });
+
+// Analytics endpoints
+app.get('/api/v1/analytics/dashboard-summary', async (req: Request, res: Response) => {
+  try {
+    const range = String(req.query.range ?? '7d');
+    const days = Number(range.replace('d', '')) || 7;
+
+    const end = new Date(); 
+    end.setHours(23,59,59,999);
+    const start = new Date(end); 
+    start.setHours(0,0,0,0); 
+    start.setDate(end.getDate() - (days - 1));
+
+    const channels = await prisma.channel.findMany();
+    const orders = await prisma.order.findMany({ 
+      where: { createdAt: { gte: start, lte: end } } 
+    });
+
+    const totalOrders = orders.length;
+    const revenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const totalRevenue = revenueCents / 100;
+    const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
+
+    // Build sales trend
+    const trendMap = new Map<string, { revenueCents: number; orders: number }>();
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start); 
+      d.setDate(start.getDate() + i);
+      const dateKey = d.toISOString().slice(0,10);
+      trendMap.set(dateKey, { revenueCents: 0, orders: 0 });
+    }
+    
+    for (const o of orders) {
+      const dateKey = o.createdAt.toISOString().slice(0,10);
+      const trend = trendMap.get(dateKey);
+      if (trend) {
+        trend.revenueCents += (o.totalCents || 0);
+        trend.orders += 1;
+      }
+    }
+
+    const salesTrend = Array.from(trendMap.entries())
+      .sort(([a],[b]) => a < b ? -1 : 1)
+      .map(([date, v]) => ({
+        date,
+        revenue: v.revenueCents / 100,
+        orders: v.orders,
+        aov: v.orders ? (v.revenueCents / 100) / v.orders : 0
+      }));
+
+    res.json({
+      success: true,
+      range: { start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10), days },
+      totalRevenue,
+      totalOrders,
+      avgOrderValue,
+      revenueGrowth: null,
+      platformComparison: [],
+      salesTrend,
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
+  try {
+    const platform = String(req.query.platform ?? 'all');
+    const today = new Date();
+    const start = new Date(req.query.start_date as string || today.toISOString().slice(0,10));
+    const end = new Date(req.query.end_date as string || today.toISOString().slice(0,10));
+
+    const orders = await prisma.order.findMany({ 
+      where: { createdAt: { gte: start, lte: end } },
+      select: { totalCents: true }
+    });
+    
+    const totalOrders = orders.length;
+    const totalRevenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const avgOrderValueCents = totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0;
+
+    res.json({
+      success: true,
+      filters: { 
+        start_date: start.toISOString().slice(0,10), 
+        end_date: end.toISOString().slice(0,10), 
+        platform 
+      },
+      totalRevenue: totalRevenueCents / 100,
+      totalOrders,
+      avgOrderValue: avgOrderValueCents / 100,
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => {
+  try {
+    const today = new Date();
+    const start = new Date(req.query.start_date as string || new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0,10));
+    const end = new Date(req.query.end_date as string || today.toISOString().slice(0,10));
+
+    const orders = await prisma.order.findMany({
+      where: { createdAt: { gte: start, lte: end } },
+      select: { createdAt: true, totalCents: true },
+    });
+
+    const dayMap = new Map<string, { revenueCents: number; orders: number }>();
+    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86_400_000)) {
+      dayMap.set(d.toISOString().slice(0,10), { revenueCents: 0, orders: 0 });
+    }
+    
+    for (const o of orders) {
+      const dateKey = o.createdAt.toISOString().slice(0,10);
+      const agg = dayMap.get(dateKey);
+      if (agg) {
+        agg.revenueCents += (o.totalCents || 0);
+        agg.orders += 1;
+      }
+    }
+
+    const trend = Array.from(dayMap.entries())
+      .sort(([a],[b]) => a < b ? -1 : 1)
+      .map(([date, v]) => ({
+        date,
+        revenue: v.revenueCents / 100,
+        orders: v.orders,
+        aov: v.orders ? (v.revenueCents / 100) / v.orders : 0
+      }));
+
+    res.json({ 
+      success: true, 
+      start: start.toISOString().slice(0,10), 
+      end: end.toISOString().slice(0,10), 
+      data: trend 
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Root endpoint
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    message: 'E-commerce Analytics API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: [
+      'GET /api/v1/health',
+      'GET /api/v1/sync/shopify?days=7',
+      'GET /api/v1/analytics/dashboard-summary?range=7d'
+    ]
+  });
+});
+
+// Error handler
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('Unhandled error:', err?.stack || err);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
+  console.log('📊 E-commerce Analytics API ready');
+});
+
+export default app;
