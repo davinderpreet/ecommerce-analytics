@@ -1,4 +1,4 @@
-// frontend/src/Dashboard.js
+// frontend/src/Dashboard.js - REPLACE YOUR ENTIRE FILE WITH THIS
 import React, { useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
@@ -6,13 +6,12 @@ import {
 import {
   TrendingUp, TrendingDown, ShoppingCart, DollarSign,
   ArrowUp, ArrowDown, Calendar, Download, RefreshCw,
-  Brain, Target, Clock, Activity
+  Brain, Target, Clock, Activity, ChevronDown, X
 } from 'lucide-react';
 
 /** ====== API base ====== **/
 const API_BASE = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
 if (!API_BASE) {
-  // eslint-disable-next-line no-console
   console.warn('REACT_APP_API_BASE is not set. Set it in Vercel → Project → Environment Variables.');
 }
 
@@ -24,22 +23,50 @@ async function http(method, path) {
 
 const Dashboard = () => {
   const [selectedPlatform, setSelectedPlatform] = useState('all');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' }); // ISO yyyy-mm-dd for custom
-  const [quickDateFilter, setQuickDateFilter] = useState('7d');        // today | yesterday | 7d | 30d | 90d
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [quickDateFilter, setQuickDateFilter] = useState('7d');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [predictionModel, setPredictionModel] = useState('advanced');
 
   // Live data state
-  const [summary, setSummary] = useState(null);        // from /dashboard-summary or constructed from /metrics
-  const [trend, setTrend] = useState([]);              // [{date, revenue, orders, aov}]
+  const [summary, setSummary] = useState(null);
+  const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+
+  // FIXED: Date helper functions for proper timezone handling
+  const getLocalDateString = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const getTodayRange = () => {
+    const today = new Date();
+    const todayStr = getLocalDateString(today);
+    return { start: todayStr, end: todayStr };
+  };
+
+  const getYesterdayRange = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = getLocalDateString(yesterday);
+    return { start: yesterdayStr, end: yesterdayStr };
+  };
 
   /** ====== Loaders ====== **/
   async function loadSummary(range = '7d') {
     setLoading(true); setErr('');
     try {
-      const data = await http('GET', `/api/v1/analytics/dashboard-summary?range=${encodeURIComponent(range)}`);
+      // Add platform filtering for summary
+      let url = `/api/v1/analytics/dashboard-summary?range=${encodeURIComponent(range)}`;
+      if (selectedPlatform !== 'all') {
+        url += `&platform=${selectedPlatform}`;
+      }
+      
+      const data = await http('GET', url);
       setSummary(data);
       setTrend(data.salesTrend || []);
       setQuickDateFilter(range);
@@ -54,12 +81,16 @@ const Dashboard = () => {
   async function loadCustomRange(startISO, endISO) {
     setLoading(true); setErr('');
     try {
+      // FIXED: Add platform filtering to both API calls
+      const platformParam = selectedPlatform !== 'all' ? `&platform=${selectedPlatform}` : '';
+      
       // trend for the chart
-      const t = await http('GET', `/api/v1/analytics/sales-trend?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}`);
+      const t = await http('GET', `/api/v1/analytics/sales-trend?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}${platformParam}`);
       setTrend(t.data || []);
 
-      // totals for cards (platform-agnostic)
-      const m = await http('GET', `/api/v1/analytics/metrics?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&platform=all`);
+      // totals for cards
+      const m = await http('GET', `/api/v1/analytics/metrics?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&platform=${selectedPlatform}`);
+      
       // build a "summary-like" object so UI stays consistent
       setSummary({
         success: true,
@@ -67,8 +98,8 @@ const Dashboard = () => {
         totalRevenue: m.totalRevenue,
         totalOrders: m.totalOrders,
         avgOrderValue: m.avgOrderValue,
-        revenueGrowth: null,              // not available for arbitrary range (could add later)
-        platformComparison: [],           // not available for arbitrary range with current API
+        revenueGrowth: null,
+        platformComparison: [],
         salesTrend: t.data || []
       });
       setQuickDateFilter('');
@@ -79,42 +110,63 @@ const Dashboard = () => {
     }
   }
 
-  /** ====== UI handlers ====== **/
+  /** ====== FIXED UI handlers ====== **/
   const handleQuickDateFilter = async (filter) => {
     setQuickDateFilter(filter);
-    if (filter === '7d' || filter === '30d' || filter === '90d') {
-      await loadSummary(filter);
-      return;
-    }
-    const today = new Date();
-    const toISO = (d) => d.toISOString().slice(0, 10);
+    
     if (filter === 'today') {
-      const start = toISO(today);
-      const end = toISO(today);
-      setDateRange({ start, end });
-      await loadCustomRange(start, end);
+      const range = getTodayRange();
+      setDateRange(range);
+      await loadCustomRange(range.start, range.end);
     } else if (filter === 'yesterday') {
-      const y = new Date(today);
-      y.setDate(y.getDate() - 1);
-      const start = toISO(y);
-      const end = toISO(y);
-      setDateRange({ start, end });
-      await loadCustomRange(start, end);
+      const range = getYesterdayRange();
+      setDateRange(range);
+      await loadCustomRange(range.start, range.end);
+    } else if (filter === '7d' || filter === '30d' || filter === '90d') {
+      await loadSummary(filter);
     }
   };
 
-  const handleCustomDateChange = async (next) => {
+  const handleCustomDateChange = async (field, value) => {
+    const next = { ...dateRange, [field]: value };
     setDateRange(next);
-    setQuickDateFilter('');
+    setQuickDateFilter('custom');
     if (next.start && next.end) {
       await loadCustomRange(next.start, next.end);
+    }
+  };
+
+  // FIXED: Platform handler that actually filters data
+  const handlePlatformChange = async (platform) => {
+    setSelectedPlatform(platform);
+    
+    // Reload current data with new platform filter
+    if (quickDateFilter === 'today') {
+      const range = getTodayRange();
+      await loadCustomRange(range.start, range.end);
+    } else if (quickDateFilter === 'yesterday') {
+      const range = getYesterdayRange();
+      await loadCustomRange(range.start, range.end);
+    } else if (quickDateFilter && quickDateFilter !== 'custom' && quickDateFilter !== '7d') {
+      await loadSummary(quickDateFilter);
+    } else if (dateRange.start && dateRange.end) {
+      await loadCustomRange(dateRange.start, dateRange.end);
+    } else {
+      // Default case - reload with 7d
+      await loadSummary('7d');
     }
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      if (quickDateFilter) {
+      if (quickDateFilter === 'today') {
+        const range = getTodayRange();
+        await loadCustomRange(range.start, range.end);
+      } else if (quickDateFilter === 'yesterday') {
+        const range = getYesterdayRange();
+        await loadCustomRange(range.start, range.end);
+      } else if (quickDateFilter && quickDateFilter !== 'custom') {
         await loadSummary(quickDateFilter);
       } else if (dateRange.start && dateRange.end) {
         await loadCustomRange(dateRange.start, dateRange.end);
@@ -200,7 +252,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Date Controls */}
+        {/* IMPROVED Date Controls */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
             {/* Quick Date Filters */}
@@ -215,10 +267,10 @@ const Dashboard = () => {
                 <button
                   key={filter.id}
                   onClick={() => handleQuickDateFilter(filter.id)}
-                  className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
+                  className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 ${
                     quickDateFilter === filter.id
-                      ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg scale-105'
-                      : 'bg-white/10 text-white/80 hover:bg-white/20 hover:scale-105'
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg scale-105 ring-2 ring-purple-300/50'
+                      : 'bg-white/10 text-white/80 hover:bg-white/20 hover:scale-105 border border-white/10'
                   }`}
                 >
                   {filter.name}
@@ -226,64 +278,137 @@ const Dashboard = () => {
               ))}
             </div>
 
-            {/* Custom Date Range */}
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl px-4 py-2">
-                <Calendar className="w-4 h-4 text-white/70" />
-                <input
-                  type="date"
-                  value={dateRange.start}
-                  onChange={(e) => handleCustomDateChange({ ...dateRange, start: e.target.value })}
-                  className="bg-transparent text-white text-sm focus:outline-none"
-                />
-                <span className="text-white/50">to</span>
-                <input
-                  type="date"
-                  value={dateRange.end}
-                  onChange={(e) => handleCustomDateChange({ ...dateRange, end: e.target.value })}
-                  className="bg-transparent text-white text-sm focus:outline-none"
-                />
-              </div>
+            {/* IMPROVED Custom Date Range */}
+            <div className="relative">
+              <button
+                onClick={() => setShowDatePicker(!showDatePicker)}
+                className="flex items-center space-x-3 bg-gradient-to-r from-indigo-500/20 to-purple-600/20 backdrop-blur-lg border border-white/30 rounded-xl px-6 py-3 text-white hover:from-indigo-500/30 hover:to-purple-600/30 transition-all duration-300"
+              >
+                <Calendar className="w-5 h-5 text-indigo-300" />
+                <span className="text-sm font-medium">
+                  {dateRange.start && dateRange.end 
+                    ? `${dateRange.start} to ${dateRange.end}` 
+                    : 'Custom Range'
+                  }
+                </span>
+                <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showDatePicker ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Modern Date Picker Dropdown */}
+              {showDatePicker && (
+                <div className="absolute top-full right-0 mt-2 bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-2xl p-6 shadow-2xl z-50 min-w-[320px]">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-white font-semibold">Select Date Range</h3>
+                    <button
+                      onClick={() => setShowDatePicker(false)}
+                      className="text-white/60 hover:text-white transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-white/70 text-sm font-medium mb-2">Start Date</label>
+                      <input
+                        type="date"
+                        value={dateRange.start}
+                        onChange={(e) => handleCustomDateChange('start', e.target.value)}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/70 text-sm font-medium mb-2">End Date</label>
+                      <input
+                        type="date"
+                        value={dateRange.end}
+                        onChange={(e) => handleCustomDateChange('end', e.target.value)}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                      />
+                    </div>
+                    
+                    {dateRange.start && dateRange.end && (
+                      <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
+                        <p className="text-green-400 text-sm">
+                          ✓ Showing data from {dateRange.start} to {dateRange.end}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Platform Selector (kept for future use) */}
+        {/* IMPROVED Platform Selector */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-semibold flex items-center">
+              <Filter className="w-5 h-5 mr-2" />
+              Filter by Platform
+            </h3>
+            <span className="text-white/60 text-sm">
+              {selectedPlatform === 'all' ? 'All Platforms' : selectedPlatform === 'shopify' ? 'Shopify Only' : 'BestBuy Only'}
+            </span>
+          </div>
+          
           <div className="flex space-x-4">
             {[
-              { id: 'all', name: 'All Platforms', color: 'from-white to-purple-200' },
-              { id: 'bestbuy', name: 'BestBuy', color: 'from-blue-400 to-blue-600' },
-              { id: 'shopify', name: 'Shopify', color: 'from-green-400 to-green-600' },
-              { id: 'amazon', name: 'Amazon (Coming Soon)', color: 'from-orange-400 to-yellow-500', disabled: true }
+              { id: 'all', name: 'All Platforms', color: 'from-white to-purple-200', available: true },
+              { id: 'shopify', name: 'Shopify', color: 'from-green-400 to-green-600', available: true },
+              { id: 'bestbuy', name: 'BestBuy', color: 'from-blue-400 to-blue-600', available: false },
+              { id: 'amazon', name: 'Amazon', color: 'from-orange-400 to-yellow-500', available: false }
             ].map(platform => (
               <button
                 key={platform.id}
-                onClick={() => !platform.disabled && setSelectedPlatform(platform.id)}
-                disabled={platform.disabled}
-                className={`px-6 py-3 rounded-2xl font-medium transition-all duration-300 ${
+                onClick={() => platform.available && handlePlatformChange(platform.id)}
+                disabled={!platform.available}
+                className={`px-6 py-3 rounded-2xl font-medium transition-all duration-300 relative ${
                   selectedPlatform === platform.id
-                    ? `bg-gradient-to-r ${platform.color} text-white shadow-lg scale-105`
-                    : platform.disabled
-                      ? 'bg-white/5 text-white/40 cursor-not-allowed'
-                      : 'bg-white/10 text-white/80 hover:bg-white/20 hover:scale-105'
+                    ? `bg-gradient-to-r ${platform.color} text-white shadow-lg scale-105 ring-2 ring-white/30`
+                    : platform.available
+                      ? 'bg-white/10 text-white/80 hover:bg-white/20 hover:scale-105 border border-white/10'
+                      : 'bg-white/5 text-white/40 cursor-not-allowed border border-white/5'
                 }`}
               >
                 {platform.name}
+                {!platform.available && platform.id !== 'all' && platform.id !== 'shopify' && (
+                  <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">
+                    Soon
+                  </span>
+                )}
               </button>
             ))}
           </div>
+          
           {selectedPlatform !== 'all' && (
-            <p className="text-xs text-white/60 mt-2">
-              Platform-specific trend coming soon. Totals already include all platforms.
-            </p>
+            <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+              <p className="text-blue-400 text-sm">
+                📊 Showing data filtered by: <strong>{selectedPlatform === 'shopify' ? 'Shopify' : selectedPlatform === 'bestbuy' ? 'BestBuy' : selectedPlatform}</strong>
+              </p>
+            </div>
           )}
         </div>
 
         {/* Status / errors */}
-        {loading && <div className="opacity-80 mb-6">Loading…</div>}
+        {loading && (
+          <div className="mb-6 backdrop-blur-xl bg-white/10 rounded-2xl p-4 border border-white/20">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+              <span className="text-white/80">Loading analytics data...</span>
+            </div>
+          </div>
+        )}
+        
         {err && !loading && (
-          <div className="bg-red-500/20 border border-red-500/40 rounded p-3 text-red-200 mb-6">Error: {err}</div>
+          <div className="bg-red-500/20 border border-red-500/40 rounded-xl p-4 text-red-200 mb-6">
+            <div className="flex items-center space-x-2">
+              <span className="text-red-400">⚠️</span>
+              <span>Error: {err}</span>
+            </div>
+          </div>
         )}
 
         {/* Main Metrics */}
@@ -312,7 +437,7 @@ const Dashboard = () => {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Sales Trend (revenue only – API provides total per day) */}
+          {/* Sales Trend */}
           <div className="lg:col-span-2 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">Sales Performance Trend</h3>
             <ResponsiveContainer width="100%" height={400}>
@@ -344,7 +469,7 @@ const Dashboard = () => {
                     return [value, name];
                   }}
                 />
-                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#8B5CF6" fill="url(#revenueGradient)" strokeWidth={3} />
+                <Area type="monotone" dataKey="revenue" name="revenue" stroke="#8B5CF6" fill="url(#revenueGradient)" strokeWidth={3} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -382,8 +507,8 @@ const Dashboard = () => {
               </PieChart>
             </ResponsiveContainer>
             {!platformData.length && (
-              <div className="mt-4 text-sm text-white/70">
-                Platform breakdown isn’t available for custom dates yet. Use 7d/30d/90d for comparison.
+              <div className="mt-4 text-sm text-white/70 text-center">
+                Platform breakdown available for preset date ranges (7d, 30d, 90d)
               </div>
             )}
           </div>
@@ -399,7 +524,7 @@ const Dashboard = () => {
             </button>
           </div>
           <div className="text-white/70">
-            Live product leaderboard coming next. (We’ll add an endpoint to aggregate by SKU across orders.)
+            Live product leaderboard coming next. (We'll add an endpoint to aggregate by SKU across orders.)
           </div>
         </div>
 
@@ -433,7 +558,6 @@ const Dashboard = () => {
                 </div>
                 <div className="text-white/80 text-sm">Predicted Revenue (Next 30 Days)</div>
                 <div className="text-cyan-400 text-sm mt-1">
-                  {/* simple compare against current total in visible range */}
                   {summary ? `+${((nextMonthPrediction - totalRevenue) / Math.max(1, totalRevenue) * 100).toFixed(1)}% vs Current Period` : '—'}
                 </div>
               </div>
@@ -545,13 +669,21 @@ const Dashboard = () => {
 
         {/* Real-time Updates Indicator */}
         <div className="text-center">
-          <div className="inline-flex items-center space-x-2 backdrop-blur-xl bg-white/10 rounded-full px-4 py-2 border border-white/20">
+          <div className="inline-flex items-center space-x-2 backdrop-blur-xl bg-white/10 rounded-full px-6 py-3 border border-white/20">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
             <span className="text-white/70 text-sm">
               {summary ? 'Dashboard connected to live API' : 'Dashboard loaded with sample data'}
             </span>
             <span className="text-white/40 text-sm">•</span>
             <span className="text-white/70 text-sm">Backend: {API_BASE || 'not set'}</span>
+            {quickDateFilter && (
+              <>
+                <span className="text-white/40 text-sm">•</span>
+                <span className="text-white/70 text-sm">
+                  Filter: {quickDateFilter === 'custom' ? 'Custom Range' : quickDateFilter}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
