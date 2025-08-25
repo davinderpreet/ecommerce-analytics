@@ -6,7 +6,7 @@ import {
 import {
   TrendingUp, TrendingDown, ShoppingCart, DollarSign,
   ArrowUp, ArrowDown, Calendar, Download, RefreshCw,
-  Brain, Target, Clock, Activity, ChevronDown, X
+  Brain, Target, Clock, Activity, ChevronDown, X, Settings
 } from 'lucide-react';
 
 /** ====== API base ====== **/
@@ -346,7 +346,7 @@ const Dashboard = () => {
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-semibold flex items-center">
-              <Filter className="w-5 h-5 mr-2" />
+              <Settings className="w-5 h-5 mr-2" />
               Filter by Platform
             </h3>
             <span className="text-white/60 text-sm">
