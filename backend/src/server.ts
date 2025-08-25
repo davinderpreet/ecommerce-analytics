@@ -54,6 +54,11 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
     const API_VER = '2024-07';
     
+    if (!SHOP || !TOKEN) {
+      res.status(400).json({ ok: false, error: 'Missing Shopify credentials' });
+      return;
+    }
+    
     console.log('🧪 About to ensure channel...');
     
     // Ensure shopify channel exists
@@ -106,16 +111,18 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('🧪 GraphQL request failed:', errorText);
-      return res.status(500).json({ ok: false, error: `Shopify API error: ${response.status}` });
+      res.status(500).json({ ok: false, error: `Shopify API error: ${response.status}` });
+      return;
     }
     
-    const data = await response.json();
+    const data: any = await response.json();
     console.log('🧪 GraphQL response received');
-    console.log('🧪 Response keys:', Object.keys(data));
+    console.log('🧪 Response keys:', Object.keys(data || {}));
     
     if (data.errors) {
       console.error('🧪 GraphQL errors:', data.errors);
-      return res.status(500).json({ ok: false, error: 'GraphQL errors', details: data.errors });
+      res.status(500).json({ ok: false, error: 'GraphQL errors', details: data.errors });
+      return;
     }
     
     const orders = data?.data?.orders?.edges ?? [];
