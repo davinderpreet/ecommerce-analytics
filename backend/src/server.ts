@@ -1,4 +1,4 @@
-// backend/src/server.ts - Complete file
+// backend/src/server.ts - REPLACE ENTIRE FILE WITH THIS
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -17,6 +17,20 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
+// Test logging endpoint
+app.get('/api/v1/test-log', (req: Request, res: Response) => {
+  console.log('🧪 TEST LOG - This endpoint was hit!');
+  console.log('🧪 Environment variables:');
+  console.log('  SHOPIFY_SHOP_DOMAIN:', process.env.SHOPIFY_SHOP_DOMAIN);
+  console.log('  SHOPIFY_ADMIN_ACCESS_TOKEN exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
+  
+  res.json({
+    message: 'Test endpoint hit - check Railway logs',
+    shop: process.env.SHOPIFY_SHOP_DOMAIN,
+    tokenExists: !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN
+  });
+});
+
 // Health endpoint
 app.get('/api/v1/health', async (req: Request, res: Response) => {
   try {
@@ -27,59 +41,7 @@ app.get('/api/v1/health', async (req: Request, res: Response) => {
   }
 });
 
-// Shopify sync endpoint with detailed debugging
-app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
-  const days = Number(req.query.days ?? 7);
-  
-  console.log('🔄 Starting Shopify sync for', days, 'days');
-  console.log('📊 SHOPIFY_SHOP_DOMAIN:', process.env.SHOPIFY_SHOP_DOMAIN);
-  console.log('🔑 SHOPIFY_ADMIN_ACCESS_TOKEN exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
-  console.log('🗄️ DATABASE_URL exists:', !!process.env.DATABASE_URL);
-  
-  try {
-    // Test database connection first
-    console.log('🔄 Testing database connection...');
-    await prisma.$queryRaw`SELECT 1`;
-    console.log('✅ Database connected');
-    
-    // Test Shopify credentials
-    const shop = process.env.SHOPIFY_SHOP_DOMAIN;
-    const token = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-    
-    if (!shop || !token) {
-      const error = `Missing credentials: shop=${!!shop}, token=${!!token}`;
-      console.error('❌', error);
-      res.status(400).json({ ok: false, error });
-      return;
-    }
-    
-    console.log('🔄 Testing Shopify connection...');
-    const testResponse = await fetch(`https://${shop}/admin/api/2024-07/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': token,
-      },
-      body: JSON.stringify({ query: '{ shop { name } }' }),
-    });
-    
-    if (!testResponse.ok) {
-      const errorText = await testResponse.text();
-      console.error('❌ Shopify connection failed:', testResponse.status, errorText);
-      res.status(500).json({ ok: false, error: `Shopify API error: ${testResponse.status}` });
-      return;
-    }
-    
-    const testData: any = await testResponse.json();
-    console.log('✅ Shopify connected to shop:', testData.data?.shop?.name);
-    
-    if (testData.errors) {
-      console.error('❌ Shopify GraphQL errors:', testData.errors);
-      res.status(500).json({ ok: false, error: 'Shopify GraphQL errors', details: testData.errors });
-      return;
-    }
-    
-    // And replace your sync endpoint with this simpler version:
+// Shopify sync endpoint with simple debug logging
 app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   console.log('🧪 SYNC ENDPOINT HIT - Starting debug');
   
@@ -98,19 +60,6 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     console.error('🧪 syncShopifyOrders threw an error:', error.message);
     res.status(500).json({ ok: false, error: error.message });
   }
-});
-
-app.get('/api/v1/test-log', (req: Request, res: Response) => {
-  console.log('🧪 TEST LOG - This endpoint was hit!');
-  console.log('🧪 Environment variables:');
-  console.log('  SHOPIFY_SHOP_DOMAIN:', process.env.SHOPIFY_SHOP_DOMAIN);
-  console.log('  SHOPIFY_ADMIN_ACCESS_TOKEN exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
-  
-  res.json({
-    message: 'Test endpoint hit - check Railway logs',
-    shop: process.env.SHOPIFY_SHOP_DOMAIN,
-    tokenExists: !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN
-  });
 });
 
 // Analytics endpoints
@@ -262,6 +211,7 @@ app.get('/', (req: Request, res: Response) => {
     status: 'running',
     endpoints: [
       'GET /api/v1/health',
+      'GET /api/v1/test-log',
       'GET /api/v1/sync/shopify?days=7',
       'GET /api/v1/analytics/dashboard-summary?range=7d'
     ]
