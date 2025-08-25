@@ -4,9 +4,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 
-// Import your sync function
-import { syncShopifyOrders } from './integrations/shopify';
-
 dotenv.config();
 
 const app = express();
@@ -41,7 +38,7 @@ app.get('/api/v1/health', async (req: Request, res: Response) => {
   }
 });
 
-// Shopify sync endpoint with simple debug logging
+// Shopify sync endpoint with inline sync code
 app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   console.log('🧪 SYNC ENDPOINT HIT - Starting debug');
   
@@ -51,13 +48,124 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   console.log('🧪 Token exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
   
   try {
-    console.log('🧪 About to call syncShopifyOrders');
-    await syncShopifyOrders(days);
-    console.log('🧪 syncShopifyOrders completed without error');
+    console.log('🧪 Starting inline Shopify sync...');
     
-    res.json({ ok: true, source: 'shopify', days });
+    const SHOP = process.env.SHOPIFY_SHOP_DOMAIN!;
+    const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
+    const API_VER = '2024-07';
+    
+    console.log('🧪 About to ensure channel...');
+    
+    // Ensure shopify channel exists
+    let channel = await prisma.channel.findUnique({ where: { code: 'shopify' } });
+    if (!channel) {
+      console.log('🧪 Creating shopify channel...');
+      channel = await prisma.channel.create({ data: { name: 'Shopify', code: 'shopify' } });
+    }
+    console.log('🧪 Channel ID:', channel.id);
+    
+    // Calculate date range
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    console.log('🧪 Fetching orders since:', since.toISOString());
+    
+    // GraphQL query
+    const query = `
+      query Orders($since: DateTime) {
+        orders(first: 25, query: $since ? "created_at:>=$since" : null, reverse: true) {
+          edges {
+            node {
+              id name createdAt currencyCode
+              totalPriceSet { shopMoney { amount } }
+              subtotalPriceSet { shopMoney { amount } }
+              totalTaxSet { shopMoney { amount } }
+              totalShippingPriceSet { shopMoney { amount } }
+              customer { email }
+            }
+          }
+        }
+      }`;
+    
+    console.log('🧪 About to make GraphQL request...');
+    
+    // Make API call
+    const response = await fetch(`https://${SHOP}/admin/api/${API_VER}/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': TOKEN,
+      },
+      body: JSON.stringify({ 
+        query, 
+        variables: { since: since.toISOString() } 
+      }),
+    });
+    
+    console.log('🧪 GraphQL response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('🧪 GraphQL request failed:', errorText);
+      return res.status(500).json({ ok: false, error: `Shopify API error: ${response.status}` });
+    }
+    
+    const data = await response.json();
+    console.log('🧪 GraphQL response received');
+    console.log('🧪 Response keys:', Object.keys(data));
+    
+    if (data.errors) {
+      console.error('🧪 GraphQL errors:', data.errors);
+      return res.status(500).json({ ok: false, error: 'GraphQL errors', details: data.errors });
+    }
+    
+    const orders = data?.data?.orders?.edges ?? [];
+    console.log('🧪 Found orders:', orders.length);
+    
+    let processedCount = 0;
+    for (const edge of orders) {
+      const order = edge.node;
+      console.log('🧪 Processing order:', order.name, 'Total:', order.totalPriceSet.shopMoney.amount);
+      
+      const totalCents = Math.round(parseFloat(order.totalPriceSet.shopMoney.amount) * 100);
+      const subtotalCents = Math.round(parseFloat(order.subtotalPriceSet.shopMoney.amount) * 100);
+      const taxCents = Math.round(parseFloat(order.totalTaxSet.shopMoney.amount) * 100);
+      const shippingCents = Math.round(parseFloat(order.totalShippingPriceSet.shopMoney.amount) * 100);
+      
+      try {
+        const savedOrder = await prisma.order.create({
+          data: {
+            channelId: channel.id,
+            channelRef: order.id,
+            number: order.name,
+            createdAt: new Date(order.createdAt),
+            currency: order.currencyCode,
+            subtotalCents,
+            taxCents,
+            shippingCents,
+            totalCents,
+            customerEmail: order.customer?.email ?? null,
+          },
+        });
+        
+        console.log('🧪 Saved order:', savedOrder.number, 'ID:', savedOrder.id);
+        processedCount++;
+        
+      } catch (dbError: any) {
+        if (dbError.code === 'P2002') {
+          console.log('🧪 Order already exists:', order.name);
+        } else {
+          console.error('🧪 Database error:', dbError.message);
+        }
+      }
+    }
+    
+    console.log('🧪 Sync complete! Processed:', processedCount, 'orders');
+    
+    res.json({ ok: true, source: 'shopify', days, found: orders.length, processed: processedCount });
+    
   } catch (error: any) {
-    console.error('🧪 syncShopifyOrders threw an error:', error.message);
+    console.error('🧪 Sync failed:', error.message);
+    console.error('🧪 Error stack:', error.stack);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
