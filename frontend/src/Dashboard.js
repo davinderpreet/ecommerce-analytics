@@ -35,8 +35,9 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
-  // FIXED: Date helper functions for proper timezone handling
+  // FIXED: Date helper functions with proper local timezone handling
   const getLocalDateString = (date) => {
+    // Use local timezone, not UTC
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -46,6 +47,7 @@ const Dashboard = () => {
   const getTodayRange = () => {
     const today = new Date();
     const todayStr = getLocalDateString(today);
+    console.log('Today range:', todayStr, 'to', todayStr);
     return { start: todayStr, end: todayStr };
   };
 
@@ -53,6 +55,7 @@ const Dashboard = () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = getLocalDateString(yesterday);
+    console.log('Yesterday range:', yesterdayStr, 'to', yesterdayStr);
     return { start: yesterdayStr, end: yesterdayStr };
   };
 
@@ -80,16 +83,22 @@ const Dashboard = () => {
 
   async function loadCustomRange(startISO, endISO) {
     setLoading(true); setErr('');
+    console.log('loadCustomRange called with:', startISO, 'to', endISO, 'platform:', selectedPlatform);
+    
     try {
       // FIXED: Add platform filtering to both API calls
       const platformParam = selectedPlatform !== 'all' ? `&platform=${selectedPlatform}` : '';
       
+      console.log('Calling sales-trend API...');
       // trend for the chart
       const t = await http('GET', `/api/v1/analytics/sales-trend?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}${platformParam}`);
+      console.log('Sales trend response:', t);
       setTrend(t.data || []);
 
+      console.log('Calling metrics API...');
       // totals for cards
       const m = await http('GET', `/api/v1/analytics/metrics?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&platform=${selectedPlatform}`);
+      console.log('Metrics response:', m);
       
       // build a "summary-like" object so UI stays consistent
       setSummary({
@@ -104,6 +113,7 @@ const Dashboard = () => {
       });
       setQuickDateFilter('');
     } catch (e) {
+      console.error('loadCustomRange error:', e);
       setErr(e.message || String(e));
     } finally {
       setLoading(false);
@@ -112,17 +122,21 @@ const Dashboard = () => {
 
   /** ====== FIXED UI handlers ====== **/
   const handleQuickDateFilter = async (filter) => {
+    console.log('handleQuickDateFilter called with:', filter);
     setQuickDateFilter(filter);
     
     if (filter === 'today') {
       const range = getTodayRange();
+      console.log('Loading today data for range:', range);
       setDateRange(range);
       await loadCustomRange(range.start, range.end);
     } else if (filter === 'yesterday') {
       const range = getYesterdayRange();
+      console.log('Loading yesterday data for range:', range);
       setDateRange(range);
       await loadCustomRange(range.start, range.end);
     } else if (filter === '7d' || filter === '30d' || filter === '90d') {
+      console.log('Loading summary data for:', filter);
       await loadSummary(filter);
     }
   };
@@ -294,49 +308,60 @@ const Dashboard = () => {
                 <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showDatePicker ? 'rotate-180' : ''}`} />
               </button>
 
-              {/* Modern Date Picker Dropdown */}
+              {/* FIXED: Modern Date Picker Dropdown with proper z-index */}
               {showDatePicker && (
-                <div className="absolute top-full right-0 mt-2 bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-2xl p-6 shadow-2xl z-50 min-w-[320px]">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-white font-semibold">Select Date Range</h3>
-                    <button
-                      onClick={() => setShowDatePicker(false)}
-                      className="text-white/60 hover:text-white transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
+                <>
+                  {/* Backdrop */}
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowDatePicker(false)}
+                  ></div>
                   
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-white/70 text-sm font-medium mb-2">Start Date</label>
-                      <input
-                        type="date"
-                        value={dateRange.start}
-                        onChange={(e) => handleCustomDateChange('start', e.target.value)}
-                        className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-                      />
+                  {/* Dropdown */}
+                  <div className="absolute top-full right-0 mt-2 bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-2xl p-6 shadow-2xl z-50 min-w-[320px]">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-white font-semibold">Select Date Range</h3>
+                      <button
+                        onClick={() => setShowDatePicker(false)}
+                        className="text-white/60 hover:text-white transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                     
-                    <div>
-                      <label className="block text-white/70 text-sm font-medium mb-2">End Date</label>
-                      <input
-                        type="date"
-                        value={dateRange.end}
-                        onChange={(e) => handleCustomDateChange('end', e.target.value)}
-                        className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-                      />
-                    </div>
-                    
-                    {dateRange.start && dateRange.end && (
-                      <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
-                        <p className="text-green-400 text-sm">
-                          ✓ Showing data from {dateRange.start} to {dateRange.end}
-                        </p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-white/70 text-sm font-medium mb-2">Start Date</label>
+                        <input
+                          type="date"
+                          value={dateRange.start}
+                          max={getLocalDateString(new Date())}
+                          onChange={(e) => handleCustomDateChange('start', e.target.value)}
+                          className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                        />
                       </div>
-                    )}
+                      
+                      <div>
+                        <label className="block text-white/70 text-sm font-medium mb-2">End Date</label>
+                        <input
+                          type="date"
+                          value={dateRange.end}
+                          max={getLocalDateString(new Date())}
+                          onChange={(e) => handleCustomDateChange('end', e.target.value)}
+                          className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                        />
+                      </div>
+                      
+                      {dateRange.start && dateRange.end && (
+                        <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
+                          <p className="text-green-400 text-sm">
+                            ✓ Showing data from {dateRange.start} to {dateRange.end}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
