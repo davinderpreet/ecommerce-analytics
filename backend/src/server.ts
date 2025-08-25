@@ -74,10 +74,10 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     since.setDate(since.getDate() - days);
     console.log('🧪 Fetching orders since:', since.toISOString());
     
-    // GraphQL query
+    // GraphQL query - fixed syntax
     const query = `
       query Orders($since: DateTime) {
-        orders(first: 25, query: $since ? "created_at:>=$since" : null, reverse: true) {
+        orders(first: 25, query: "created_at:>=$since", reverse: true) {
           edges {
             node {
               id name createdAt currencyCode
