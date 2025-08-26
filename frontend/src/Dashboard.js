@@ -1,4 +1,4 @@
-// frontend/src/Dashboard.js - REPLACE YOUR ENTIRE FILE WITH THIS
+// frontend/src/Dashboard.js - COMPLETE FILE WITH DATE/TIMEZONE FIXES
 import React, { useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
@@ -16,9 +16,20 @@ if (!API_BASE) {
 }
 
 async function http(method, path) {
-  const res = await fetch(`${API_BASE}${path}`, { method, headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(await res.text().catch(() => `Request failed: ${res.status}`));
-  return res.json();
+  console.log(`🌐 API Request: ${method} ${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { 
+    method, 
+    headers: { Accept: 'application/json' },
+    cache: 'no-cache' // Always fetch fresh data
+  });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => `Request failed: ${res.status}`);
+    console.error(`🌐 API Error: ${method} ${path} - ${res.status}: ${errorText}`);
+    throw new Error(errorText);
+  }
+  const data = await res.json();
+  console.log(`🌐 API Response: ${method} ${path}`, data);
+  return data;
 }
 
 const Dashboard = () => {
@@ -34,9 +45,11 @@ const Dashboard = () => {
   const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [debugInfo, setDebugInfo] = useState(null);
 
-  // FIXED: Date helper functions with proper local timezone handling
+  // FIXED: Date helper functions with consistent local timezone handling
   const getLocalDateString = (date) => {
+    // Always use local timezone for consistent date strings
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -56,52 +69,69 @@ const Dashboard = () => {
     return { start: yesterdayStr, end: yesterdayStr };
   };
 
-  // NEW: Load today's data using dedicated endpoint
+  // NEW: Enhanced debug logging
+  const logDebug = (context, data) => {
+    console.log(`🐛 [${context}]`, data);
+  };
+
+  // FIXED: Load today's data using dedicated endpoint with enhanced debugging
   async function loadTodayData() {
-    setLoading(true); setErr('');
+    setLoading(true); setErr(''); setDebugInfo(null);
+    logDebug('loadTodayData', { selectedPlatform });
+    
     try {
       const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
       const data = await http('GET', `/api/v1/analytics/today${platformParam}`);
       
+      logDebug('Today API Response', data);
+      setDebugInfo(data.debug || null);
+      
       setSummary({
         success: true,
-        totalRevenue: data.totalRevenue,
-        totalOrders: data.totalOrders,
-        avgOrderValue: data.avgOrderValue,
+        totalRevenue: data.totalRevenue || 0,
+        totalOrders: data.totalOrders || 0,
+        avgOrderValue: data.avgOrderValue || 0,
         range: { start: data.date, end: data.date, days: 1 },
         platformComparison: [],
-        salesTrend: [{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]
+        salesTrend: [{ date: data.date, revenue: data.totalRevenue || 0, orders: data.totalOrders || 0 }]
       });
-      setTrend([{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]);
+      setTrend([{ date: data.date, revenue: data.totalRevenue || 0, orders: data.totalOrders || 0 }]);
       setQuickDateFilter('today');
       setDateRange({ start: '', end: '' });
     } catch (e) {
+      logDebug('Today API Error', e);
       setErr(e.message || String(e));
     } finally {
       setLoading(false);
     }
   }
 
-  // NEW: Load yesterday's data using dedicated endpoint
+  // FIXED: Load yesterday's data using dedicated endpoint with enhanced debugging
   async function loadYesterdayData() {
-    setLoading(true); setErr('');
+    setLoading(true); setErr(''); setDebugInfo(null);
+    logDebug('loadYesterdayData', { selectedPlatform });
+    
     try {
       const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
       const data = await http('GET', `/api/v1/analytics/yesterday${platformParam}`);
       
+      logDebug('Yesterday API Response', data);
+      setDebugInfo(data.debug || null);
+      
       setSummary({
         success: true,
-        totalRevenue: data.totalRevenue,
-        totalOrders: data.totalOrders,
-        avgOrderValue: data.avgOrderValue,
+        totalRevenue: data.totalRevenue || 0,
+        totalOrders: data.totalOrders || 0,
+        avgOrderValue: data.avgOrderValue || 0,
         range: { start: data.date, end: data.date, days: 1 },
         platformComparison: [],
-        salesTrend: [{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]
+        salesTrend: [{ date: data.date, revenue: data.totalRevenue || 0, orders: data.totalOrders || 0 }]
       });
-      setTrend([{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]);
+      setTrend([{ date: data.date, revenue: data.totalRevenue || 0, orders: data.totalOrders || 0 }]);
       setQuickDateFilter('yesterday');
       setDateRange({ start: '', end: '' });
     } catch (e) {
+      logDebug('Yesterday API Error', e);
       setErr(e.message || String(e));
     } finally {
       setLoading(false);
@@ -109,7 +139,9 @@ const Dashboard = () => {
   }
 
   async function loadSummary(range = '7d') {
-    setLoading(true); setErr('');
+    setLoading(true); setErr(''); setDebugInfo(null);
+    logDebug('loadSummary', { range, selectedPlatform });
+    
     try {
       let url = `/api/v1/analytics/dashboard-summary?range=${encodeURIComponent(range)}`;
       if (selectedPlatform !== 'all') {
@@ -117,11 +149,15 @@ const Dashboard = () => {
       }
       
       const data = await http('GET', url);
+      logDebug('Summary API Response', data);
+      setDebugInfo(data.debug || null);
+      
       setSummary(data);
       setTrend(data.salesTrend || []);
       setQuickDateFilter(range);
       setDateRange({ start: '', end: '' });
     } catch (e) {
+      logDebug('Summary API Error', e);
       setErr(e.message || String(e));
     } finally {
       setLoading(false);
@@ -129,27 +165,39 @@ const Dashboard = () => {
   }
 
   async function loadCustomRange(startISO, endISO) {
-    setLoading(true); setErr('');
+    setLoading(true); setErr(''); setDebugInfo(null);
+    logDebug('loadCustomRange', { startISO, endISO, selectedPlatform });
+    
     try {
       const platformParam = selectedPlatform !== 'all' ? `&platform=${selectedPlatform}` : '';
       
       const t = await http('GET', `/api/v1/analytics/sales-trend?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}${platformParam}`);
+      logDebug('Custom Trend API Response', t);
       setTrend(t.data || []);
 
       const m = await http('GET', `/api/v1/analytics/metrics?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&platform=${selectedPlatform}`);
+      logDebug('Custom Metrics API Response', m);
+      
+      // Combine debug info from both calls
+      const combinedDebug = {
+        trend: t.debug,
+        metrics: m.debug
+      };
+      setDebugInfo(combinedDebug);
       
       setSummary({
         success: true,
         range: { start: startISO, end: endISO, days: Math.max(1, (new Date(endISO) - new Date(startISO)) / 86400000 + 1) },
-        totalRevenue: m.totalRevenue,
-        totalOrders: m.totalOrders,
-        avgOrderValue: m.avgOrderValue,
+        totalRevenue: m.totalRevenue || 0,
+        totalOrders: m.totalOrders || 0,
+        avgOrderValue: m.avgOrderValue || 0,
         revenueGrowth: null,
         platformComparison: [],
         salesTrend: t.data || []
       });
       setQuickDateFilter('');
     } catch (e) {
+      logDebug('Custom Range API Error', e);
       setErr(e.message || String(e));
     } finally {
       setLoading(false);
@@ -157,6 +205,7 @@ const Dashboard = () => {
   }
 
   const handleQuickDateFilter = async (filter) => {
+    logDebug('handleQuickDateFilter', { filter, selectedPlatform });
     setQuickDateFilter(filter);
     
     if (filter === 'today') {
@@ -172,12 +221,14 @@ const Dashboard = () => {
     const next = { ...dateRange, [field]: value };
     setDateRange(next);
     setQuickDateFilter('custom');
+    logDebug('handleCustomDateChange', { field, value, next });
     if (next.start && next.end) {
       await loadCustomRange(next.start, next.end);
     }
   };
 
   const handlePlatformChange = async (platform) => {
+    logDebug('handlePlatformChange', { from: selectedPlatform, to: platform });
     setSelectedPlatform(platform);
     
     if (quickDateFilter === 'today') {
@@ -195,6 +246,8 @@ const Dashboard = () => {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    logDebug('handleRefresh', { quickDateFilter, dateRange, selectedPlatform });
+    
     try {
       if (quickDateFilter === 'today') {
         await loadTodayData();
@@ -212,9 +265,19 @@ const Dashboard = () => {
     }
   };
 
+  // FIXED: Load initial data on component mount
   useEffect(() => {
+    logDebug('useEffect - Initial load', {});
     loadSummary('7d');
   }, []);
+
+  // FIXED: Update platform filtering without losing current date filter
+  useEffect(() => {
+    if (selectedPlatform) {
+      logDebug('useEffect - Platform changed', { selectedPlatform });
+      // Platform change is handled by handlePlatformChange, not here
+    }
+  }, []); // Empty dependency array to avoid infinite loops
 
   const totalRevenue = summary?.totalRevenue ?? 0;
   const totalOrders = summary?.totalOrders ?? 0;
@@ -262,6 +325,39 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* FIXED: Enhanced status indicator with debug info */}
+        <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
+          <div className="flex flex-col space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-3">
+                <div className={`w-3 h-3 rounded-full ${summary ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
+                <span className="text-white/80 text-sm font-medium">
+                  {loading ? 'Loading data...' : summary ? 'Live data connected' : 'Using sample data'}
+                </span>
+              </div>
+              <span className="text-white/60 text-sm">
+                API: {API_BASE || 'Not configured'}
+              </span>
+            </div>
+            
+            {/* Debug information panel */}
+            {debugInfo && (
+              <div className="bg-slate-800/50 rounded-xl p-4 text-xs">
+                <details>
+                  <summary className="text-white/70 cursor-pointer hover:text-white">
+                    Debug Information (Click to expand)
+                  </summary>
+                  <div className="mt-2 text-white/60">
+                    <pre className="overflow-auto max-h-32">
+                      {JSON.stringify(debugInfo, null, 2)}
+                    </pre>
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
             <div className="flex flex-wrap gap-3">
@@ -275,11 +371,12 @@ const Dashboard = () => {
                 <button
                   key={filter.id}
                   onClick={() => handleQuickDateFilter(filter.id)}
+                  disabled={loading}
                   className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 ${
                     quickDateFilter === filter.id
                       ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg scale-105 ring-2 ring-purple-300/50'
                       : 'bg-white/10 text-white/80 hover:bg-white/20 hover:scale-105 border border-white/10'
-                  }`}
+                  } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {filter.name}
                 </button>
@@ -289,7 +386,8 @@ const Dashboard = () => {
             <div className="relative">
               <button
                 onClick={() => setShowDatePicker(!showDatePicker)}
-                className="flex items-center space-x-3 bg-gradient-to-r from-indigo-500/20 to-purple-600/20 backdrop-blur-lg border border-white/30 rounded-xl px-6 py-3 text-white hover:from-indigo-500/30 hover:to-purple-600/30 transition-all duration-300"
+                disabled={loading}
+                className={`flex items-center space-x-3 bg-gradient-to-r from-indigo-500/20 to-purple-600/20 backdrop-blur-lg border border-white/30 rounded-xl px-6 py-3 text-white hover:from-indigo-500/30 hover:to-purple-600/30 transition-all duration-300 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <Calendar className="w-5 h-5 text-indigo-300" />
                 <span className="text-sm font-medium">
@@ -327,7 +425,8 @@ const Dashboard = () => {
                           value={dateRange.start}
                           max={getLocalDateString(new Date())}
                           onChange={(e) => handleCustomDateChange('start', e.target.value)}
-                          className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                          disabled={loading}
+                          className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50"
                         />
                       </div>
                       
@@ -338,7 +437,8 @@ const Dashboard = () => {
                           value={dateRange.end}
                           max={getLocalDateString(new Date())}
                           onChange={(e) => handleCustomDateChange('end', e.target.value)}
-                          className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                          disabled={loading}
+                          className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50"
                         />
                       </div>
                       
@@ -375,12 +475,12 @@ const Dashboard = () => {
             ].map(platform => (
               <button
                 key={platform.id}
-                onClick={() => platform.available && handlePlatformChange(platform.id)}
-                disabled={!platform.available}
+                onClick={() => platform.available && !loading && handlePlatformChange(platform.id)}
+                disabled={!platform.available || loading}
                 className={`px-6 py-3 rounded-2xl font-medium transition-all duration-300 relative ${
                   selectedPlatform === platform.id
                     ? `bg-gradient-to-r ${platform.color} text-white shadow-lg scale-105 ring-2 ring-white/30`
-                    : platform.available
+                    : platform.available && !loading
                       ? 'bg-white/10 text-white/80 hover:bg-white/20 hover:scale-105 border border-white/10'
                       : 'bg-white/5 text-white/40 cursor-not-allowed border border-white/5'
                 }`}
@@ -434,88 +534,176 @@ const Dashboard = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
-            <h3 className="text-2xl font-bold text-white mb-6">Sales Performance Trend</h3>
-            <ResponsiveContainer width="100%" height={400}>
-              <AreaChart data={trend}>
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                <XAxis
-                  dataKey="date"
-                  stroke="rgba(255,255,255,0.7)"
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                />
-                <YAxis stroke="rgba(255,255,255,0.7)" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '16px',
-                    backdropFilter: 'blur(20px)'
-                  }}
-                  formatter={(value, name) => {
-                    if (name === 'revenue') return [`$${Number(value).toFixed(2)}`, 'Revenue'];
-                    if (name === 'orders') return [Number(value), 'Orders'];
-                    return [value, name];
-                  }}
-                />
-                <Area type="monotone" dataKey="revenue" name="revenue" stroke="#8B5CF6" fill="url(#revenueGradient)" strokeWidth={3} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold text-white">Sales Performance Trend</h3>
+              {trend && trend.length > 0 && (
+                <div className="text-white/60 text-sm">
+                  {trend.length} data point{trend.length !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+            
+            {trend && trend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <AreaChart data={trend}>
+                  <defs>
+                    <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                  <XAxis
+                    dataKey="date"
+                    stroke="rgba(255,255,255,0.7)"
+                    tickFormatter={(value) => {
+                      try {
+                        return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                      } catch {
+                        return value;
+                      }
+                    }}
+                  />
+                  <YAxis stroke="rgba(255,255,255,0.7)" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '16px',
+                      backdropFilter: 'blur(20px)'
+                    }}
+                    formatter={(value, name) => {
+                      if (name === 'revenue') return [`${Number(value).toFixed(2)}`, 'Revenue'];
+                      if (name === 'orders') return [Number(value), 'Orders'];
+                      return [value, name];
+                    }}
+                    labelFormatter={(label) => {
+                      try {
+                        return new Date(label).toLocaleDateString('en-US', { 
+                          weekday: 'short', 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric' 
+                        });
+                      } catch {
+                        return label;
+                      }
+                    }}
+                  />
+                  <Area type="monotone" dataKey="revenue" name="revenue" stroke="#8B5CF6" fill="url(#revenueGradient)" strokeWidth={3} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-96 flex items-center justify-center text-white/60">
+                <div className="text-center">
+                  <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No sales data available for the selected period</p>
+                  <p className="text-sm mt-2">Try selecting a different date range or refresh the data</p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">Platform Revenue</h3>
-            <ResponsiveContainer width="100%" height={400}>
-              <PieChart>
-                <Pie
-                  data={platformData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={120}
-                  innerRadius={60}
-                  paddingAngle={5}
-                  dataKey="sales"
-                >
-                  {platformData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '16px',
-                    backdropFilter: 'blur(20px)'
-                  }}
-                  formatter={(value, name, item) => {
-                    const orders = item?.payload?.orders ?? 0;
-                    return [`$${Number(value).toFixed(2)} • ${orders} orders`, name];
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            {!platformData.length && (
-              <div className="mt-4 text-sm text-white/70 text-center">
-                Platform breakdown available for preset date ranges
+            
+            {platformData && platformData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <PieChart>
+                  <Pie
+                    data={platformData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    innerRadius={60}
+                    paddingAngle={5}
+                    dataKey="sales"
+                  >
+                    {platformData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '16px',
+                      backdropFilter: 'blur(20px)'
+                    }}
+                    formatter={(value, name, item) => {
+                      const orders = item?.payload?.orders ?? 0;
+                      return [`${Number(value).toFixed(2)} • ${orders} orders`, name];
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-96 flex items-center justify-center text-white/60">
+                <div className="text-center">
+                  <Target className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Platform breakdown</p>
+                  <p className="text-sm mt-2">Available for preset date ranges with multiple orders</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Platform legend */}
+            {platformData && platformData.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {platformData.map((platform, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: platform.color }}
+                      ></div>
+                      <span className="text-white/80 text-sm">{platform.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-white text-sm font-medium">
+                        ${platform.sales.toFixed(2)}
+                      </div>
+                      <div className="text-white/60 text-xs">
+                        {platform.orders} orders
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
 
+        {/* Enhanced footer with more detailed status */}
         <div className="text-center">
-          <div className="inline-flex items-center space-x-2 backdrop-blur-xl bg-white/10 rounded-full px-6 py-3 border border-white/20">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          <div className="inline-flex items-center space-x-4 backdrop-blur-xl bg-white/10 rounded-full px-6 py-3 border border-white/20">
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${summary ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
+              <span className="text-white/70 text-sm">
+                {summary ? 'Live API data' : 'Sample data'}
+              </span>
+            </div>
+            <span className="text-white/40 text-sm">•</span>
             <span className="text-white/70 text-sm">
-              {summary ? 'Dashboard connected to live API' : 'Dashboard loaded with sample data'}
+              Filter: {selectedPlatform === 'all' ? 'All Platforms' : selectedPlatform}
             </span>
             <span className="text-white/40 text-sm">•</span>
-            <span className="text-white/70 text-sm">Backend: {API_BASE || 'not set'}</span>
+            <span className="text-white/70 text-sm">
+              Period: {quickDateFilter === 'today' ? 'Today' : 
+                       quickDateFilter === 'yesterday' ? 'Yesterday' :
+                       quickDateFilter === 'custom' ? 'Custom' :
+                       quickDateFilter || '7 days'}
+            </span>
           </div>
+          
+          {/* Additional debug info for developers */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/40">
+              <div>API Base: {API_BASE || 'Not configured'}</div>
+              <div>Environment: {process.env.NODE_ENV}</div>
+              <div>Last Updated: {new Date().toLocaleTimeString()}</div>
+            </div>
+          )}
         </div>
       </div>
     </div>
