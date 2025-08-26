@@ -37,7 +37,6 @@ const Dashboard = () => {
 
   // FIXED: Date helper functions with proper local timezone handling
   const getLocalDateString = (date) => {
-    // Use local timezone, not UTC
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -47,7 +46,6 @@ const Dashboard = () => {
   const getTodayRange = () => {
     const today = new Date();
     const todayStr = getLocalDateString(today);
-    console.log('Today range:', todayStr, 'to', todayStr);
     return { start: todayStr, end: todayStr };
   };
 
@@ -55,7 +53,6 @@ const Dashboard = () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = getLocalDateString(yesterday);
-    console.log('Yesterday range:', yesterdayStr, 'to', yesterdayStr);
     return { start: yesterdayStr, end: yesterdayStr };
   };
 
@@ -66,7 +63,6 @@ const Dashboard = () => {
       const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
       const data = await http('GET', `/api/v1/analytics/today${platformParam}`);
       
-      // Transform to match dashboard format
       setSummary({
         success: true,
         totalRevenue: data.totalRevenue,
@@ -93,7 +89,6 @@ const Dashboard = () => {
       const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
       const data = await http('GET', `/api/v1/analytics/yesterday${platformParam}`);
       
-      // Transform to match dashboard format
       setSummary({
         success: true,
         totalRevenue: data.totalRevenue,
@@ -113,11 +108,9 @@ const Dashboard = () => {
     }
   }
 
-  /** ====== Loaders ====== **/
   async function loadSummary(range = '7d') {
     setLoading(true); setErr('');
     try {
-      // Add platform filtering for summary
       let url = `/api/v1/analytics/dashboard-summary?range=${encodeURIComponent(range)}`;
       if (selectedPlatform !== 'all') {
         url += `&platform=${selectedPlatform}`;
@@ -137,24 +130,14 @@ const Dashboard = () => {
 
   async function loadCustomRange(startISO, endISO) {
     setLoading(true); setErr('');
-    console.log('loadCustomRange called with:', startISO, 'to', endISO, 'platform:', selectedPlatform);
-    
     try {
-      // FIXED: Add platform filtering to both API calls
       const platformParam = selectedPlatform !== 'all' ? `&platform=${selectedPlatform}` : '';
       
-      console.log('Calling sales-trend API...');
-      // trend for the chart
       const t = await http('GET', `/api/v1/analytics/sales-trend?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}${platformParam}`);
-      console.log('Sales trend response:', t);
       setTrend(t.data || []);
 
-      console.log('Calling metrics API...');
-      // totals for cards
       const m = await http('GET', `/api/v1/analytics/metrics?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&platform=${selectedPlatform}`);
-      console.log('Metrics response:', m);
       
-      // build a "summary-like" object so UI stays consistent
       setSummary({
         success: true,
         range: { start: startISO, end: endISO, days: Math.max(1, (new Date(endISO) - new Date(startISO)) / 86400000 + 1) },
@@ -167,26 +150,20 @@ const Dashboard = () => {
       });
       setQuickDateFilter('');
     } catch (e) {
-      console.error('loadCustomRange error:', e);
       setErr(e.message || String(e));
     } finally {
       setLoading(false);
     }
   }
 
-  /** ====== FIXED UI handlers with dedicated endpoints ====== **/
   const handleQuickDateFilter = async (filter) => {
-    console.log('handleQuickDateFilter called with:', filter);
     setQuickDateFilter(filter);
     
     if (filter === 'today') {
-      console.log('Loading today data using dedicated endpoint');
       await loadTodayData();
     } else if (filter === 'yesterday') {
-      console.log('Loading yesterday data using dedicated endpoint');
       await loadYesterdayData();
     } else if (filter === '7d' || filter === '30d' || filter === '90d') {
-      console.log('Loading summary data for:', filter);
       await loadSummary(filter);
     }
   };
@@ -200,23 +177,18 @@ const Dashboard = () => {
     }
   };
 
-  // FIXED: Platform handler that actually filters data
   const handlePlatformChange = async (platform) => {
     setSelectedPlatform(platform);
     
-    // Reload current data with new platform filter
     if (quickDateFilter === 'today') {
-      const range = getTodayRange();
-      await loadCustomRange(range.start, range.end);
+      await loadTodayData();
     } else if (quickDateFilter === 'yesterday') {
-      const range = getYesterdayRange();
-      await loadCustomRange(range.start, range.end);
-    } else if (quickDateFilter && quickDateFilter !== 'custom' && quickDateFilter !== '7d') {
+      await loadYesterdayData();
+    } else if (quickDateFilter && quickDateFilter !== 'custom') {
       await loadSummary(quickDateFilter);
     } else if (dateRange.start && dateRange.end) {
       await loadCustomRange(dateRange.start, dateRange.end);
     } else {
-      // Default case - reload with 7d
       await loadSummary('7d');
     }
   };
@@ -225,11 +197,9 @@ const Dashboard = () => {
     setIsRefreshing(true);
     try {
       if (quickDateFilter === 'today') {
-        const range = getTodayRange();
-        await loadCustomRange(range.start, range.end);
+        await loadTodayData();
       } else if (quickDateFilter === 'yesterday') {
-        const range = getYesterdayRange();
-        await loadCustomRange(range.start, range.end);
+        await loadYesterdayData();
       } else if (quickDateFilter && quickDateFilter !== 'custom') {
         await loadSummary(quickDateFilter);
       } else if (dateRange.start && dateRange.end) {
@@ -242,60 +212,36 @@ const Dashboard = () => {
     }
   };
 
-  /** ====== initial load ====== **/
   useEffect(() => {
     loadSummary('7d');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** ====== Derived UI data ====== **/
   const totalRevenue = summary?.totalRevenue ?? 0;
-  const totalOrders  = summary?.totalOrders ?? 0;
-  const avgOrderVal  = summary?.avgOrderValue ?? 0;
+  const totalOrders = summary?.totalOrders ?? 0;
+  const avgOrderVal = summary?.avgOrderValue ?? 0;
   const revenueGrowth = summary?.revenueGrowth;
 
-  // pie: platform comparison (when available; empty on custom ranges)
   const platformData = (summary?.platformComparison || []).map(p => ({
     name: p.name,
     sales: p.revenue,
     orders: p.orders,
-    color: p.name.toLowerCase().includes('shopify') ? '#96BF47'
-         : p.name.toLowerCase().includes('best') ? '#0066CC'
-         : '#8B5CF6'
+    color: p.name.toLowerCase().includes('shopify') ? '#96BF47' : '#8B5CF6'
   }));
 
-  // prediction mock (kept from your original UI)
-  const generatePredictionData = () => {
-    const predictions = [];
-    const startDate = new Date();
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(startDate); date.setDate(date.getDate() + i);
-      const predictedTotal = Math.floor((15000 + Math.random() * 4000));
-      predictions.push({ date: date.toISOString().slice(0,10), predicted: predictedTotal, confidence: Math.floor(95 - i*0.5) });
-    }
-    return predictions;
-  };
-  const predictionData = generatePredictionData();
-  const nextMonthPrediction = predictionData.reduce((s, d) => s + d.predicted, 0);
-
-  // Main cards (use only metrics we truly have)
   const mainMetrics = [
     { title: 'Total Revenue', value: `$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, change: revenueGrowth == null ? '—' : `${revenueGrowth.toFixed(1)}%`, trend: revenueGrowth == null ? 'flat' : (revenueGrowth >= 0 ? 'up' : 'down'), icon: DollarSign, color: 'from-emerald-400 to-teal-600' },
-    { title: 'Total Orders',  value: totalOrders.toLocaleString(), change: '—', trend: 'flat', icon: ShoppingCart, color: 'from-blue-400 to-indigo-600' },
+    { title: 'Total Orders', value: totalOrders.toLocaleString(), change: '—', trend: 'flat', icon: ShoppingCart, color: 'from-blue-400 to-indigo-600' },
     { title: 'Avg Order Value', value: `$${avgOrderVal.toFixed(2)}`, change: '—', trend: 'flat', icon: TrendingUp, color: 'from-orange-400 to-red-500' }
   ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
       </div>
 
       <div className="relative z-10 p-8">
-        {/* Header */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex justify-between items-center">
             <div>
@@ -316,10 +262,8 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* IMPROVED Date Controls */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
-            {/* Quick Date Filters */}
             <div className="flex flex-wrap gap-3">
               {[
                 { id: 'today', name: 'Today' },
@@ -342,7 +286,6 @@ const Dashboard = () => {
               ))}
             </div>
 
-            {/* IMPROVED Custom Date Range */}
             <div className="relative">
               <button
                 onClick={() => setShowDatePicker(!showDatePicker)}
@@ -358,16 +301,13 @@ const Dashboard = () => {
                 <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showDatePicker ? 'rotate-180' : ''}`} />
               </button>
 
-              {/* FIXED: Modern Date Picker Dropdown with proper z-index */}
               {showDatePicker && (
                 <>
-                  {/* Backdrop */}
                   <div 
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowDatePicker(false)}
                   ></div>
                   
-                  {/* Dropdown */}
                   <div className="absolute top-full right-0 mt-2 bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-2xl p-6 shadow-2xl z-50 min-w-[320px]">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-white font-semibold">Select Date Range</h3>
@@ -417,7 +357,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* IMPROVED Platform Selector */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-semibold flex items-center">
@@ -432,9 +371,7 @@ const Dashboard = () => {
           <div className="flex space-x-4">
             {[
               { id: 'all', name: 'All Platforms', color: 'from-white to-purple-200', available: true },
-              { id: 'shopify', name: 'Shopify', color: 'from-green-400 to-green-600', available: true },
-              { id: 'bestbuy', name: 'BestBuy', color: 'from-blue-400 to-blue-600', available: false },
-              { id: 'amazon', name: 'Amazon', color: 'from-orange-400 to-yellow-500', available: false }
+              { id: 'shopify', name: 'Shopify', color: 'from-green-400 to-green-600', available: true }
             ].map(platform => (
               <button
                 key={platform.id}
@@ -449,25 +386,11 @@ const Dashboard = () => {
                 }`}
               >
                 {platform.name}
-                {!platform.available && platform.id !== 'all' && platform.id !== 'shopify' && (
-                  <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">
-                    Soon
-                  </span>
-                )}
               </button>
             ))}
           </div>
-          
-          {selectedPlatform !== 'all' && (
-            <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-              <p className="text-blue-400 text-sm">
-                📊 Showing data filtered by: <strong>{selectedPlatform === 'shopify' ? 'Shopify' : selectedPlatform === 'bestbuy' ? 'BestBuy' : selectedPlatform}</strong>
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Status / errors */}
         {loading && (
           <div className="mb-6 backdrop-blur-xl bg-white/10 rounded-2xl p-4 border border-white/20">
             <div className="flex items-center space-x-3">
@@ -486,7 +409,6 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Main Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {mainMetrics.map((metric, index) => {
             const Icon = metric.icon;
@@ -510,9 +432,7 @@ const Dashboard = () => {
           })}
         </div>
 
-        {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Sales Trend */}
           <div className="lg:col-span-2 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">Sales Performance Trend</h3>
             <ResponsiveContainer width="100%" height={400}>
@@ -540,7 +460,6 @@ const Dashboard = () => {
                   formatter={(value, name) => {
                     if (name === 'revenue') return [`$${Number(value).toFixed(2)}`, 'Revenue'];
                     if (name === 'orders') return [Number(value), 'Orders'];
-                    if (name === 'aov') return [`$${Number(value).toFixed(2)}`, 'AOV'];
                     return [value, name];
                   }}
                 />
@@ -549,7 +468,6 @@ const Dashboard = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Platform Distribution */}
           <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">Platform Revenue</h3>
             <ResponsiveContainer width="100%" height={400}>
@@ -583,3 +501,25 @@ const Dashboard = () => {
             </ResponsiveContainer>
             {!platformData.length && (
               <div className="mt-4 text-sm text-white/70 text-center">
+                Platform breakdown available for preset date ranges
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="text-center">
+          <div className="inline-flex items-center space-x-2 backdrop-blur-xl bg-white/10 rounded-full px-6 py-3 border border-white/20">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="text-white/70 text-sm">
+              {summary ? 'Dashboard connected to live API' : 'Dashboard loaded with sample data'}
+            </span>
+            <span className="text-white/40 text-sm">•</span>
+            <span className="text-white/70 text-sm">Backend: {API_BASE || 'not set'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
