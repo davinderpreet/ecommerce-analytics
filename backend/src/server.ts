@@ -323,6 +323,34 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    message: 'E-commerce Analytics API',
+    version: '2.7.0',
+    status: 'running',
+    features: [
+      'Shopify integration', 
+      'Real-time sync', 
+      'Debug endpoints', 
+      'Automated sync', 
+      'Caching',
+      'Inventory Management' // Added
+    ],
+    timezone: USER_TIMEZONE,
+    currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
+    scheduler: scheduler.getStatus(),
+    endpoints: [
+      // ... existing endpoints ...
+      
+      // Add these inventory endpoints
+      'GET /api/v1/inventory - Get all inventory items with metrics',
+      'POST /api/v1/inventory/:productId/update - Update inventory quantity',
+      'POST /api/v1/inventory/sync - Sync inventory (placeholder)'
+    ]
+  });
+});
+
+
 // Today's data endpoint
 app.get('/api/v1/analytics/today', async (req: Request, res: Response) => {
   try {
