@@ -148,4 +148,54 @@ router.post('/:productId/update', async (req, res) => {
   }
 });
 
+// POST /api/v1/inventory/seed - Seed initial inventory data
+router.post('/seed', async (req, res) => {
+  try {
+    // Get all products
+    const products = await prisma.product.findMany();
+    
+    // Set random inventory for each product
+    const results = [];
+    for (const product of products) {
+      const quantity = Math.floor(Math.random() * 100) + 20; // Random 20-120
+      
+      let inventory = await prisma.inventory.findUnique({
+        where: { productId: product.id }
+      });
+      
+      if (!inventory) {
+        inventory = await prisma.inventory.create({
+          data: {
+            productId: product.id,
+            quantity
+          }
+        });
+      } else {
+        inventory = await prisma.inventory.update({
+          where: { id: inventory.id },
+          data: { quantity }
+        });
+      }
+      
+      results.push({
+        sku: product.sku,
+        title: product.title,
+        quantity
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: `Seeded inventory for ${results.length} products`,
+      results
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 export default router;
