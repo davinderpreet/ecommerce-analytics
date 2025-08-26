@@ -1,78 +1,44 @@
-// backend/src/routes/inventory.ts - CLEAN VERSION WITH ONLY EXISTING FIELDS
+// backend/src/routes/inventory.ts - COMPLETE MINIMAL VERSION
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-/**
- * GET /api/v1/inventory
- * Read inventory from existing data only
- */
+// GET /api/v1/inventory - Simple inventory list
 router.get('/', async (req, res) => {
   try {
-    const platform = req.query.platform as string || 'all';
-    
-    // Build where clause
-    const whereClause: any = { active: true };
-    if (platform !== 'all') {
-      const channel = await prisma.channel.findUnique({ 
-        where: { code: platform } 
-      });
-      if (channel) {
-        whereClause.channelId = channel.id;
-      }
-    }
-    
-    // Get products with existing relationships
+    // Get all products with inventory
     const products = await prisma.product.findMany({
-      where: whereClause,
+      where: { active: true },
       include: {
         inventory: true,
         channel: true,
         orderItems: {
-          include: {
-            order: true
-          },
-          orderBy: {
-            order: {
-              createdAt: 'desc'
-            }
-          },
+          include: { order: true },
+          orderBy: { order: { createdAt: 'desc' } },
           take: 50
         }
       }
     });
     
-    // Calculate metrics from order history
+    // Calculate simple metrics
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
     const inventoryItems = products.map(product => {
-      // Calculate sales velocity
       const recentSales = product.orderItems.filter(
         item => item.order.createdAt >= thirtyDaysAgo
       );
       const totalSold = recentSales.reduce((sum, item) => sum + item.quantity, 0);
       const salesVelocity = totalSold / 30;
-      
-      // Get current stock from inventory.quantity (the only field we have)
       const currentStock = product.inventory?.quantity || 0;
+      const daysUntilStockout = salesVelocity > 0 ? Math.floor(currentStock / salesVelocity) : 999;
       
-      // Calculate days until stockout
-      const daysUntilStockout = salesVelocity > 0 
-        ? Math.floor(currentStock / salesVelocity)
-        : 999;
-      
-      // Determine risk level
       let stockoutRisk = 'low';
       if (daysUntilStockout <= 1) stockoutRisk = 'critical';
       else if (daysUntilStockout <= 3) stockoutRisk = 'high';
       else if (daysUntilStockout <= 7) stockoutRisk = 'medium';
-      
-      // Use defaults for fields we don't have in DB
-      const reorderPoint = 20;
-      const reorderQuantity = 100;
       
       return {
         id: product.id,
@@ -80,13 +46,13 @@ router.get('/', async (req, res) => {
         title: product.title,
         channel: product.channel.name,
         quantity: currentStock,
-        available: currentStock, // Same as quantity since we don't track reserved
-        reserved: 0, // We don't track this yet
-        incoming: 0, // We don't track this yet
-        reorderPoint: reorderPoint,
-        reorderQuantity: reorderQuantity,
-        leadTime: 7, // Default
-        batchSize: 50, // Default
+        available: currentStock,
+        reserved: 0,
+        incoming: 0,
+        reorderPoint: 20,
+        reorderQuantity: 100,
+        leadTime: 7,
+        batchSize: 50,
         stockoutRisk,
         daysUntilStockout,
         lastSold: recentSales[0]?.order.createdAt.toISOString() || null,
@@ -96,7 +62,6 @@ router.get('/', async (req, res) => {
       };
     });
     
-    // Calculate stats
     const stats = {
       totalProducts: inventoryItems.length,
       totalValue: inventoryItems.reduce((sum, item) => sum + item.totalValue, 0),
@@ -109,7 +74,6 @@ router.get('/', async (req, res) => {
       stockAccuracy: 98.5
     };
     
-    // Generate simple alerts
     const alerts = inventoryItems
       .filter(item => item.stockoutRisk === 'critical' || item.stockoutRisk === 'high')
       .slice(0, 5)
@@ -139,10 +103,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * POST /api/v1/inventory/:productId/update
- * Simple inventory quantity update
- */
+// POST /api/v1/inventory/:productId/update - Update quantity
 router.post('/:productId/update', async (req, res) => {
   try {
     const { productId } = req.params;
@@ -155,13 +116,11 @@ router.post('/:productId/update', async (req, res) => {
       });
     }
     
-    // Find or create inventory record
     let inventory = await prisma.inventory.findUnique({
       where: { productId }
     });
     
     if (!inventory) {
-      // Create new inventory record
       inventory = await prisma.inventory.create({
         data: {
           productId,
@@ -169,12 +128,9 @@ router.post('/:productId/update', async (req, res) => {
         }
       });
     } else {
-      // Update existing inventory
       inventory = await prisma.inventory.update({
         where: { id: inventory.id },
-        data: { 
-          quantity: quantity 
-        }
+        data: { quantity }
       });
     }
     
@@ -183,27 +139,6 @@ router.post('/:productId/update', async (req, res) => {
       inventory
     });
     
-  } catch (error: any) {
-    console.error('Inventory update error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Failed to update inventory'
-    });
-  }
-});
-
-/**
- * POST /api/v1/inventory/sync
- * Sync inventory (placeholder for future implementation)
- */
-router.post('/sync', async (req, res) => {
-  try {
-    // For now, just return success
-    // Later this can sync with Shopify/BestBuy APIs
-    res.json({ 
-      success: true, 
-      message: 'Inventory sync completed (placeholder)' 
-    });
   } catch (error: any) {
     res.status(500).json({ 
       success: false, 
