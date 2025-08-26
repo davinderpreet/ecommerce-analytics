@@ -74,25 +74,25 @@ const DateUtils = {
   // Convert cents to dollars
   toDollars: (cents: number | null | undefined) => ((cents ?? 0) / 100),
 
-  // Get today's date range in local timezone
+  // Get today's date range in UTC timezone (server timezone)
   getTodayRange: () => {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayUTC = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     return {
-      start: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0), // 00:00:00.000
-      end: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999), // 23:59:59.999
-      dateStr: DateUtils.formatDateKey(today)
+      start: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate(), 0, 0, 0, 0)),
+      end: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate(), 23, 59, 59, 999)),
+      dateStr: DateUtils.formatDateKey(todayUTC)
     };
   },
 
-  // Get yesterday's date range in local timezone
+  // Get yesterday's date range in UTC timezone (server timezone)
   getYesterdayRange: () => {
     const now = new Date();
-    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yesterdayUTC = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1);
     return {
-      start: new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 0, 0, 0, 0), // 00:00:00.000
-      end: new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 23, 59, 59, 999), // 23:59:59.999
-      dateStr: DateUtils.formatDateKey(yesterday)
+      start: new Date(Date.UTC(yesterdayUTC.getUTCFullYear(), yesterdayUTC.getUTCMonth(), yesterdayUTC.getUTCDate(), 0, 0, 0, 0)),
+      end: new Date(Date.UTC(yesterdayUTC.getUTCFullYear(), yesterdayUTC.getUTCMonth(), yesterdayUTC.getUTCDate(), 23, 59, 59, 999)),
+      dateStr: DateUtils.formatDateKey(yesterdayUTC)
     };
   }
 };
