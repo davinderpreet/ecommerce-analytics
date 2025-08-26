@@ -57,11 +57,21 @@ export const api = {
   
   inventorySeed: () => http("POST", "/api/v1/inventory/seed"),
   
+  inventorySyncShopify: () => http("POST", "/api/v1/inventory/sync-shopify"),
+  
   inventoryUpdate: (productId, quantity) => 
     http("POST", `/api/v1/inventory/${productId}/update`, {
       headers: { 
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ quantity })
+    }),
+    
+  inventoryReorder: (data) =>
+    http("POST", "/api/v1/inventory/reorder", {
+      headers: { 
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(data)
     })
 };
