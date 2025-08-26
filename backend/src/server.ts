@@ -456,10 +456,11 @@ app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
     const endDateStr = req.query.end_date as string;
     
     if (!startDateStr || !endDateStr) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         error: 'start_date and end_date are required' 
       });
+      return;
     }
     
     // Parse dates with proper timezone handling
@@ -467,10 +468,11 @@ app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
     const endDate = DateUtils.parseFilterDate(endDateStr);
     
     if (!startDate || !endDate) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         error: 'Invalid date format. Use YYYY-MM-DD' 
       });
+      return;
     }
     
     console.log('📈 Date range:', startDate.dateStr, 'to', endDate.dateStr);
@@ -533,20 +535,22 @@ app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => 
     const platform = String(req.query.platform ?? 'all');
     
     if (!startDateStr || !endDateStr) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         error: 'start_date and end_date are required' 
       });
+      return;
     }
     
     const startDate = DateUtils.parseFilterDate(startDateStr);
     const endDate = DateUtils.parseFilterDate(endDateStr);
     
     if (!startDate || !endDate) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         error: 'Invalid date format. Use YYYY-MM-DD' 
       });
+      return;
     }
     
     console.log('📉 Date range:', startDate.dateStr, 'to', endDate.dateStr);
