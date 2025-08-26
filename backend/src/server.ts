@@ -1,4 +1,4 @@
-// backend/src/server.ts - COMPLETE FILE WITH TIMEZONE FIXES
+// backend/src/server.ts - COMPLETE FILE WITH TYPESCRIPT FIXES
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -14,33 +14,42 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
-// FIXED: Proper timezone handling - get user's actual timezone
-const USER_TIMEZONE = process.env.TZ || 'America/Toronto'; // Set this to your timezone
+// FIXED: Proper timezone handling with consistent return types
+const USER_TIMEZONE = process.env.TZ || 'America/Toronto';
+
+// Define consistent types for date ranges
+interface DateRange {
+  start: Date;
+  end: Date;
+  startStr: string;
+  endStr: string;
+  days: number;
+}
+
+interface SingleDateRange {
+  start: Date;
+  end: Date;
+  dateStr: string;
+}
 
 const DateUtils = {
-  // FIXED: Get current date in user's timezone
-  getCurrentDateInTimezone: () => {
+  getCurrentDateInTimezone: (): Date => {
     const now = new Date();
-    // Convert to user's timezone
     const userDate = new Date(now.toLocaleString("en-US", { timeZone: USER_TIMEZONE }));
     return userDate;
   },
 
-  // FIXED: Parse date string consistently in user's timezone
-  parseFilterDate: (dateStr: string | undefined, defaultDate?: Date) => {
+  parseFilterDate: (dateStr: string | undefined, defaultDate?: Date): SingleDateRange | null => {
     if (!dateStr) {
       if (!defaultDate) return null;
       dateStr = DateUtils.formatDateKey(defaultDate);
     }
     
-    // Parse as date in user's timezone
     const [year, month, day] = dateStr.split('-').map(Number);
     if (!year || !month || !day) {
       throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
     }
     
-    // Create date in user's timezone by using their local time
-    const userNow = DateUtils.getCurrentDateInTimezone();
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
     
@@ -49,20 +58,15 @@ const DateUtils = {
     }
     
     return {
-      startOfDay,
-      endOfDay,
+      start: startOfDay,
+      end: endOfDay,
       dateStr: DateUtils.formatDateKey(startOfDay)
     };
   },
 
-  // FIXED: Get date range for relative periods in user's timezone
-  getRelativeDateRange: (days: number) => {
+  getRelativeDateRange: (days: number): DateRange => {
     const userNow = DateUtils.getCurrentDateInTimezone();
-    
-    // End of today in user's timezone
     const end = new Date(userNow.getFullYear(), userNow.getMonth(), userNow.getDate(), 23, 59, 59, 999);
-    
-    // Start of N days ago in user's timezone
     const start = new Date(userNow.getFullYear(), userNow.getMonth(), userNow.getDate() - (days - 1), 0, 0, 0, 0);
     
     return {
@@ -74,19 +78,16 @@ const DateUtils = {
     };
   },
 
-  // Format date consistently
-  formatDateKey: (date: Date) => {
+  formatDateKey: (date: Date): string => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   },
   
-  // Convert cents to dollars
-  toDollars: (cents: number | null | undefined) => ((cents ?? 0) / 100),
+  toDollars: (cents: number | null | undefined): number => ((cents ?? 0) / 100),
 
-  // FIXED: Get today's date range in user's timezone
-  getTodayRange: () => {
+  getTodayRange: (): SingleDateRange => {
     const userNow = DateUtils.getCurrentDateInTimezone();
     const today = new Date(userNow.getFullYear(), userNow.getMonth(), userNow.getDate());
     
@@ -97,8 +98,7 @@ const DateUtils = {
     };
   },
 
-  // FIXED: Get yesterday's date range in user's timezone 
-  getYesterdayRange: () => {
+  getYesterdayRange: (): SingleDateRange => {
     const userNow = DateUtils.getCurrentDateInTimezone();
     const yesterday = new Date(userNow.getFullYear(), userNow.getMonth(), userNow.getDate() - 1);
     
@@ -109,8 +109,7 @@ const DateUtils = {
     };
   },
 
-  // Debug helper
-  debugDateRange: (label: string, startDate: Date, endDate: Date) => {
+  debugDateRange: (label: string, startDate: Date, endDate: Date): void => {
     const userNow = DateUtils.getCurrentDateInTimezone();
     console.log(`📅 ${label}:`);
     console.log(`   Current time in ${USER_TIMEZONE}: ${userNow.toLocaleString()}`);
@@ -156,17 +155,22 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
     console.log('🔍 Debug orders endpoint hit');
     
     const platform = String(req.query.platform ?? 'all');
-    const dateType = String(req.query.dateType ?? '7d'); // 'today', 'yesterday', '7d', etc.
+    const dateType = String(req.query.dateType ?? '7d');
     
-    // Get date range based on type
-    let dateRange;
+    // Get date range based on type with proper typing
+    let dateRange: DateRange | SingleDateRange;
+    let queryDateStr: string;
+    
     if (dateType === 'today') {
       dateRange = DateUtils.getTodayRange();
+      queryDateStr = dateRange.dateStr;
     } else if (dateType === 'yesterday') {
       dateRange = DateUtils.getYesterdayRange();
+      queryDateStr = dateRange.dateStr;
     } else {
       const days = Number(dateType.replace('d', '')) || 7;
       dateRange = DateUtils.getRelativeDateRange(days);
+      queryDateStr = `${dateRange.startStr} to ${dateRange.endStr}`;
     }
     
     DateUtils.debugDateRange(`Debug Orders Range (${dateType})`, dateRange.start, dateRange.end);
@@ -182,7 +186,176 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
     }
     
     // Get detailed order information
+    const orders = await prisma.order.findMany({ 
+      where: whereClause,
+      select: { totalCents: true, createdAt: true, number: true }
+    });
+    
+    console.log('📈 Found orders:', orders.length);
+    
+    const totalOrders = orders.length;
+    const totalRevenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
+    const avgOrderValueCents = totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0;
+
+    res.json({
+      success: true,
+      filters: { 
+        start_date: startDate.dateStr, 
+        end_date: endDate.dateStr, 
+        platform 
+      },
+      totalRevenue: DateUtils.toDollars(totalRevenueCents),
+      totalOrders,
+      avgOrderValue: DateUtils.toDollars(avgOrderValueCents),
+      debug: {
+        queryRange: {
+          start: startDate.start.toISOString(),
+          end: endDate.end.toISOString()
+        },
+        timezone: USER_TIMEZONE
+      }
+    });
+    
+  } catch (e: any) {
+    console.error('📈 Metrics error:', e);
+    res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Sales trend endpoint
+app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => {
+  try {
+    console.log('📉 Sales trend request:', req.query);
+    
+    const startDateStr = req.query.start_date as string;
+    const endDateStr = req.query.end_date as string;
+    const platform = String(req.query.platform ?? 'all');
+    
+    if (!startDateStr || !endDateStr) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'start_date and end_date are required' 
+      });
+      return;
+    }
+    
+    const startDate = DateUtils.parseFilterDate(startDateStr);
+    const endDate = DateUtils.parseFilterDate(endDateStr);
+    
+    if (!startDate || !endDate) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Invalid date format. Use YYYY-MM-DD' 
+      });
+      return;
+    }
+    
+    DateUtils.debugDateRange('Sales Trend Query Range', startDate.start, endDate.end);
+    
+    let whereClause: any = {
+      createdAt: { gte: startDate.start, lte: endDate.end }
+    };
+    
+    if (platform !== 'all') {
+      const channel = await prisma.channel.findUnique({ where: { code: platform } });
+      if (channel) {
+        whereClause.channelId = channel.id;
+      }
+    }
+
     const orders = await prisma.order.findMany({
+      where: whereClause,
+      select: { createdAt: true, totalCents: true, number: true },
+    });
+
+    console.log('📉 Found orders:', orders.length);
+
+    // Create day buckets for the entire range
+    const dayMap = new Map<string, { revenueCents: number; orders: number }>();
+    
+    for (let d = new Date(startDate.start); d <= endDate.end; d = new Date(d.getTime() + 86_400_000)) {
+      const dateKey = DateUtils.formatDateKey(d);
+      dayMap.set(dateKey, { revenueCents: 0, orders: 0 });
+    }
+    
+    // Fill in actual data
+    for (const order of orders) {
+      const dateKey = DateUtils.formatDateKey(order.createdAt);
+      const agg = dayMap.get(dateKey);
+      if (agg) {
+        agg.revenueCents += (order.totalCents || 0);
+        agg.orders += 1;
+      }
+    }
+
+    const trend = Array.from(dayMap.entries())
+      .sort(([a], [b]) => a < b ? -1 : 1)
+      .map(([date, v]) => ({
+        date,
+        revenue: DateUtils.toDollars(v.revenueCents),
+        orders: v.orders,
+        aov: v.orders ? DateUtils.toDollars(Math.round(v.revenueCents / v.orders)) : 0
+      }));
+
+    res.json({ 
+      success: true, 
+      start: startDate.dateStr, 
+      end: endDate.dateStr, 
+      data: trend,
+      debug: {
+        queryRange: {
+          start: startDate.start.toISOString(),
+          end: endDate.end.toISOString()
+        },
+        timezone: USER_TIMEZONE
+      }
+    });
+  } catch (e: any) {
+    console.error('📉 Sales trend error:', e);
+    res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Root endpoint
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    message: 'E-commerce Analytics API',
+    version: '2.3.0',
+    status: 'running',
+    features: ['Multi-platform support', 'FIXED timezone handling', 'Real-time sync', 'Debug endpoints', 'TypeScript fixes'],
+    timezone: USER_TIMEZONE,
+    currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
+    endpoints: [
+      'GET /api/v1/health',
+      'GET /api/v1/test-log',
+      'GET /api/v1/sync/shopify?days=7',
+      'GET /api/v1/analytics/today?platform=all',
+      'GET /api/v1/analytics/yesterday?platform=all',
+      'GET /api/v1/analytics/dashboard-summary?range=7d&platform=all',
+      'GET /api/v1/analytics/metrics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
+      'GET /api/v1/analytics/sales-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
+      'GET /api/v1/debug/orders?dateType=yesterday&platform=all'
+    ]
+  });
+});
+
+// Error handler
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('Unhandled error:', err?.stack || err);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
+  console.log('📊 E-commerce Analytics API v2.3 ready');
+  console.log('🔧 Features: Multi-platform + FIXED timezone handling + Debug endpoints + TypeScript fixes');
+  console.log('📅 All dates now use consistent timezone logic');
+  console.log('🌍 Timezone:', USER_TIMEZONE);
+  console.log('⏰ Current time:', DateUtils.getCurrentDateInTimezone().toLocaleString());
+});
+
+export default app;order.findMany({
       where: whereClause,
       include: {
         channel: true,
@@ -218,13 +391,13 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
           orders: orders.map(o => ({
             number: o.number,
             channelRef: o.channelRef,
-            total: DateUtils.toDollars(o.totalCents),
+            total: DateUtils.toDollars(o.totalCents || 0),
             createdAt: o.createdAt.toISOString(),
             createdAtLocal: o.createdAt.toLocaleString(),
             itemCount: o.items.length,
-            subtotal: DateUtils.toDollars(o.subtotalCents),
-            tax: DateUtils.toDollars(o.taxCents),
-            shipping: DateUtils.toDollars(o.shippingCents)
+            subtotal: DateUtils.toDollars(o.subtotalCents || 0),
+            tax: DateUtils.toDollars(o.taxCents || 0),
+            shipping: DateUtils.toDollars(o.shippingCents || 0)
           }))
         };
       });
@@ -235,7 +408,7 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
       queryRange: {
         start: dateRange.start.toISOString(),
         end: dateRange.end.toISOString(),
-        dateStr: 'start' in dateRange ? dateRange.dateStr : `${DateUtils.formatDateKey(dateRange.start)} to ${DateUtils.formatDateKey(dateRange.end)}`
+        dateStr: queryDateStr
       },
       timezone: USER_TIMEZONE,
       currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
@@ -248,7 +421,7 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
       allOrdersFlat: orders.map(o => ({
         number: o.number,
         channelRef: o.channelRef,
-        total: DateUtils.toDollars(o.totalCents),
+        total: DateUtils.toDollars(o.totalCents || 0),
         dateKey: DateUtils.formatDateKey(o.createdAt),
         createdAt: o.createdAt.toISOString(),
         createdAtLocal: o.createdAt.toLocaleString()
@@ -293,7 +466,7 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     }
     console.log('🧪 Channel ID:', channel.id);
     
-    // FIXED: Calculate date range using improved date utilities with proper timezone
+    // Calculate date range using improved date utilities with proper timezone
     const dateRange = DateUtils.getRelativeDateRange(days);
     console.log('🧪 Fetching orders since:', dateRange.start.toISOString());
     DateUtils.debugDateRange('Sync Date Range', dateRange.start, dateRange.end);
@@ -406,7 +579,7 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   }
 });
 
-// FIXED: Today's data endpoint
+// Today's data endpoint
 app.get('/api/v1/analytics/today', async (req: Request, res: Response) => {
   try {
     console.log('📅 Today endpoint hit');
@@ -454,7 +627,7 @@ app.get('/api/v1/analytics/today', async (req: Request, res: Response) => {
         currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
         orderDetails: orders.map(o => ({
           number: o.number,
-          total: DateUtils.toDollars(o.totalCents),
+          total: DateUtils.toDollars(o.totalCents || 0),
           dateKey: DateUtils.formatDateKey(o.createdAt),
           createdAt: o.createdAt.toISOString(),
           createdAtLocal: o.createdAt.toLocaleString()
@@ -467,7 +640,7 @@ app.get('/api/v1/analytics/today', async (req: Request, res: Response) => {
   }
 });
 
-// FIXED: Yesterday's data endpoint
+// Yesterday's data endpoint
 app.get('/api/v1/analytics/yesterday', async (req: Request, res: Response) => {
   try {
     console.log('📅 Yesterday endpoint hit');
@@ -515,7 +688,7 @@ app.get('/api/v1/analytics/yesterday', async (req: Request, res: Response) => {
         currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
         orderDetails: orders.map(o => ({
           number: o.number,
-          total: DateUtils.toDollars(o.totalCents),
+          total: DateUtils.toDollars(o.totalCents || 0),
           dateKey: DateUtils.formatDateKey(o.createdAt),
           createdAt: o.createdAt.toISOString(),
           createdAtLocal: o.createdAt.toLocaleString()
@@ -528,7 +701,7 @@ app.get('/api/v1/analytics/yesterday', async (req: Request, res: Response) => {
   }
 });
 
-// FIXED: Dashboard summary endpoint
+// Dashboard summary endpoint
 app.get('/api/v1/analytics/dashboard-summary', async (req: Request, res: Response) => {
   try {
     console.log('📊 Dashboard summary request:', req.query);
@@ -647,7 +820,7 @@ app.get('/api/v1/analytics/dashboard-summary', async (req: Request, res: Respons
   }
 });
 
-// FIXED: Metrics endpoint
+// Metrics endpoint
 app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
   try {
     console.log('📈 Metrics request:', req.query);
@@ -675,10 +848,10 @@ app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
       return;
     }
     
-    DateUtils.debugDateRange('Metrics Query Range', startDate.startOfDay, endDate.endOfDay);
+    DateUtils.debugDateRange('Metrics Query Range', startDate.start, endDate.end);
     
     let whereClause: any = {
-      createdAt: { gte: startDate.startOfDay, lte: endDate.endOfDay }
+      createdAt: { gte: startDate.start, lte: endDate.end }
     };
     
     if (platform !== 'all') {
@@ -688,171 +861,4 @@ app.get('/api/v1/analytics/metrics', async (req: Request, res: Response) => {
       }
     }
     
-    const orders = await prisma.order.findMany({ 
-      where: whereClause,
-      select: { totalCents: true, createdAt: true, number: true }
-    });
-    
-    console.log('📈 Found orders:', orders.length);
-    
-    const totalOrders = orders.length;
-    const totalRevenueCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0);
-    const avgOrderValueCents = totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0;
-
-    res.json({
-      success: true,
-      filters: { 
-        start_date: startDate.dateStr, 
-        end_date: endDate.dateStr, 
-        platform 
-      },
-      totalRevenue: DateUtils.toDollars(totalRevenueCents),
-      totalOrders,
-      avgOrderValue: DateUtils.toDollars(avgOrderValueCents),
-      debug: {
-        queryRange: {
-          start: startDate.startOfDay.toISOString(),
-          end: endDate.endOfDay.toISOString()
-        },
-        timezone: USER_TIMEZONE
-      }
-    });
-    
-  } catch (e: any) {
-    console.error('📈 Metrics error:', e);
-    res.status(500).json({ success: false, error: e?.message });
-  }
-});
-
-// FIXED: Sales trend endpoint
-app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => {
-  try {
-    console.log('📉 Sales trend request:', req.query);
-    
-    const startDateStr = req.query.start_date as string;
-    const endDateStr = req.query.end_date as string;
-    const platform = String(req.query.platform ?? 'all');
-    
-    if (!startDateStr || !endDateStr) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'start_date and end_date are required' 
-      });
-      return;
-    }
-    
-    const startDate = DateUtils.parseFilterDate(startDateStr);
-    const endDate = DateUtils.parseFilterDate(endDateStr);
-    
-    if (!startDate || !endDate) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Invalid date format. Use YYYY-MM-DD' 
-      });
-      return;
-    }
-    
-    DateUtils.debugDateRange('Sales Trend Query Range', startDate.startOfDay, endDate.endOfDay);
-    
-    let whereClause: any = {
-      createdAt: { gte: startDate.startOfDay, lte: endDate.endOfDay }
-    };
-    
-    if (platform !== 'all') {
-      const channel = await prisma.channel.findUnique({ where: { code: platform } });
-      if (channel) {
-        whereClause.channelId = channel.id;
-      }
-    }
-
-    const orders = await prisma.order.findMany({
-      where: whereClause,
-      select: { createdAt: true, totalCents: true, number: true },
-    });
-
-    console.log('📉 Found orders:', orders.length);
-
-    // Create day buckets for the entire range
-    const dayMap = new Map<string, { revenueCents: number; orders: number }>();
-    
-    for (let d = new Date(startDate.startOfDay); d <= endDate.endOfDay; d = new Date(d.getTime() + 86_400_000)) {
-      const dateKey = DateUtils.formatDateKey(d);
-      dayMap.set(dateKey, { revenueCents: 0, orders: 0 });
-    }
-    
-    // Fill in actual data
-    for (const order of orders) {
-      const dateKey = DateUtils.formatDateKey(order.createdAt);
-      const agg = dayMap.get(dateKey);
-      if (agg) {
-        agg.revenueCents += (order.totalCents || 0);
-        agg.orders += 1;
-      }
-    }
-
-    const trend = Array.from(dayMap.entries())
-      .sort(([a], [b]) => a < b ? -1 : 1)
-      .map(([date, v]) => ({
-        date,
-        revenue: DateUtils.toDollars(v.revenueCents),
-        orders: v.orders,
-        aov: v.orders ? DateUtils.toDollars(Math.round(v.revenueCents / v.orders)) : 0
-      }));
-
-    res.json({ 
-      success: true, 
-      start: startDate.dateStr, 
-      end: endDate.dateStr, 
-      data: trend,
-      debug: {
-        queryRange: {
-          start: startDate.startOfDay.toISOString(),
-          end: endDate.endOfDay.toISOString()
-        },
-        timezone: USER_TIMEZONE
-      }
-    });
-  } catch (e: any) {
-    console.error('📉 Sales trend error:', e);
-    res.status(500).json({ success: false, error: e?.message });
-  }
-});
-
-// Root endpoint
-app.get('/', (req: Request, res: Response) => {
-  res.json({
-    message: 'E-commerce Analytics API',
-    version: '2.2.0',
-    status: 'running',
-    features: ['Multi-platform support', 'FIXED timezone handling', 'Real-time sync', 'Debug endpoints'],
-    timezone: USER_TIMEZONE,
-    currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
-    endpoints: [
-      'GET /api/v1/health',
-      'GET /api/v1/test-log',
-      'GET /api/v1/sync/shopify?days=7',
-      'GET /api/v1/analytics/today?platform=all',
-      'GET /api/v1/analytics/yesterday?platform=all',
-      'GET /api/v1/analytics/dashboard-summary?range=7d&platform=all',
-      'GET /api/v1/analytics/metrics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
-      'GET /api/v1/analytics/sales-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
-      'GET /api/v1/debug/orders?dateType=yesterday&platform=all'
-    ]
-  });
-});
-
-// Error handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('Unhandled error:', err?.stack || err);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
-
-// Start server
-app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
-  console.log('📊 E-commerce Analytics API v2.2 ready');
-  console.log('🔧 Features: Multi-platform + FIXED timezone handling + Debug endpoints');
-  console.log('📅 All dates now use consistent timezone logic');
-  console.log('🌍 Timezone:', USER_TIMEZONE);
-  console.log('⏰ Current time:', DateUtils.getCurrentDateInTimezone().toLocaleString());
-});
+    const orders = await prisma.
