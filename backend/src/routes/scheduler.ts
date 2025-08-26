@@ -16,8 +16,8 @@ router.get('/status', (req, res) => {
       data: status
     });
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
@@ -36,8 +36,8 @@ router.post('/start', (req, res) => {
       message: 'Scheduler started - syncing today\'s data every 3 minutes'
     });
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
@@ -56,8 +56,8 @@ router.post('/stop', (req, res) => {
       message: 'Scheduler stopped'
     });
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
@@ -77,8 +77,8 @@ router.post('/sync-today', async (req, res) => {
     
     res.json(result);
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
@@ -99,8 +99,8 @@ router.post('/sync-historical', async (req, res) => {
     
     res.json(result);
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
@@ -119,8 +119,8 @@ router.get('/cache/stats', (req, res) => {
       data: stats
     });
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
@@ -139,8 +139,8 @@ router.post('/cache/clear', (req, res) => {
       message: 'Cache cleared successfully'
     });
   } catch (error: unknown) {
-  const message = error instanceof Error ? message : String(error);
-res.status(500).json({
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
       success: false,
       error: message
     });
