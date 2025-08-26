@@ -1,4 +1,4 @@
-// backend/src/routes/inventory.ts - COMPLETE MINIMAL VERSION
+// backend/src/routes/inventory.ts - FIXED VERSION
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 
@@ -110,10 +110,11 @@ router.post('/:productId/update', async (req, res) => {
     const { quantity } = req.body;
     
     if (quantity === undefined || quantity < 0) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Invalid quantity'
       });
+      return; // Add explicit return here
     }
     
     let inventory = await prisma.inventory.findUnique({
