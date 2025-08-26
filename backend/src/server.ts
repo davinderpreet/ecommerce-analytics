@@ -1,4 +1,4 @@
-// backend/src/server.ts - COMPLETE VERSION WITH FIXED PAGINATION
+// backend/src/server.ts - FIXED VERSION WITH CORRECT IMPORT
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import schedulerRoutes from './routes/scheduler';
 import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
-import { syncShopifyOrders } from '../lib/shopify';
+import { syncShopifyOrders } from './integrations/shopify'; // FIXED: Correct import path
 
 dotenv.config();
 
@@ -282,7 +282,7 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
 
 // FIXED: Shopify sync endpoint - now uses the proper pagination function
 app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
-  console.log('🚀 SYNC ENDPOINT HIT - Using FIXED pagination from lib/shopify.ts');
+  console.log('🚀 SYNC ENDPOINT HIT - Using FIXED pagination from src/integrations/shopify.ts');
   
   const days = Number(req.query.days ?? 7);
   console.log('🚀 Days:', days);
