@@ -15,10 +15,11 @@ router.get('/status', (req, res) => {
       success: true,
       data: status
     });
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
@@ -34,10 +35,11 @@ router.post('/start', (req, res) => {
       success: true,
       message: 'Scheduler started - syncing today\'s data every 3 minutes'
     });
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
@@ -53,10 +55,11 @@ router.post('/stop', (req, res) => {
       success: true,
       message: 'Scheduler stopped'
     });
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
@@ -73,10 +76,11 @@ router.post('/sync-today', async (req, res) => {
     cacheService.clear();
     
     res.json(result);
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
@@ -94,10 +98,11 @@ router.post('/sync-historical', async (req, res) => {
     cacheService.clear();
     
     res.json(result);
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
@@ -113,10 +118,11 @@ router.get('/cache/stats', (req, res) => {
       success: true,
       data: stats
     });
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
@@ -132,10 +138,11 @@ router.post('/cache/clear', (req, res) => {
       success: true,
       message: 'Cache cleared successfully'
     });
-  } catch (error) {
-    res.status(500).json({
+  } catch (error: unknown) {
+  const message = error instanceof Error ? message : String(error);
+res.status(500).json({
       success: false,
-      error: error.message
+      error: message
     });
   }
 });
