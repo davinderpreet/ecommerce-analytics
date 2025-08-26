@@ -1,4 +1,4 @@
-// frontend/src/Dashboard.js - COMPLETE FILE WITH DATE/TIMEZONE FIXES
+// frontend/src/Dashboard.js - COMPLETE FILE WITH DATE/TIMEZONE FIXES (and Predictions integrated)
 import React, { useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
@@ -9,17 +9,21 @@ import {
   Brain, Target, Clock, Activity, ChevronDown, X, Settings
 } from 'lucide-react';
 
-/** ====== API base - FIXED FOR VERCEL ====== **/
+/** ====== API bases - Vercel-friendly ====== **/
 // Use the API from lib/api.js if available, otherwise use direct HTTP
 const API_BASE = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
+const ML_API_BASE = (process.env.REACT_APP_ML_API_BASE || API_BASE || '').replace(/\/$/, '');
 
 // Import api from lib if it exists
 let api;
 try {
+  // eslint-disable-next-line global-require
   const apiLib = require('./lib/api');
   api = apiLib.api;
+  // eslint-disable-next-line no-console
   console.log('✅ Using api from lib/api.js');
 } catch (e) {
+  // eslint-disable-next-line no-console
   console.log('⚠️ lib/api.js not found, using direct HTTP');
   api = null;
 }
@@ -30,21 +34,25 @@ async function http(method, path) {
     console.warn('REACT_APP_API_BASE is not set. Please set it in Vercel → Project → Environment Variables.');
     throw new Error('API base URL not configured');
   }
-  
-  console.log(`🌐 API Request: ${method} ${API_BASE}${path}`);
-  const res = await fetch(`${API_BASE}${path}`, { 
-    method, 
+
+  const url = `${API_BASE}${path}`;
+  // eslint-disable-next-line no-console
+  console.log(`🌐 API Request: ${method} ${url}`);
+  const res = await fetch(url, {
+    method,
     headers: { Accept: 'application/json' },
-    cache: 'no-cache' // Always fetch fresh data
+    cache: 'no-cache', // Always fetch fresh data
   });
-  
+
   if (!res.ok) {
     const errorText = await res.text().catch(() => `Request failed: ${res.status}`);
+    // eslint-disable-next-line no-console
     console.error(`🌐 API Error: ${method} ${path} - ${res.status}: ${errorText}`);
     throw new Error(errorText);
   }
-  
+
   const data = await res.json();
+  // eslint-disable-next-line no-console
   console.log(`🌐 API Response: ${method} ${path}`, data);
   return data;
 }
@@ -55,7 +63,7 @@ const Dashboard = () => {
   const [quickDateFilter, setQuickDateFilter] = useState('7d');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [predictionModel, setPredictionModel] = useState('advanced');
+  const [predictionModel] = useState('advanced'); // reserved for future
 
   // Live data state
   const [summary, setSummary] = useState(null);
@@ -63,6 +71,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [debugInfo, setDebugInfo] = useState(null);
+
+  // Predictions state (HOOKS MUST be here at top)
+  const [predictions, setPredictions] = useState(null);
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
 
   // FIXED: Date helper functions with consistent local timezone handling
   const getLocalDateString = (date) => {
@@ -88,23 +100,49 @@ const Dashboard = () => {
 
   // NEW: Enhanced debug logging
   const logDebug = (context, data) => {
+    // eslint-disable-next-line no-console
     console.log(`🐛 [${context}]`, data);
+  };
+
+  // ===== Predictions fetcher (scoped correctly) =====
+  const fetchPredictions = async () => {
+    setLoadingPredictions(true);
+    try {
+      const res = await fetch(`${ML_API_BASE}/api/v1/ml/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // adapt payload for your service
+        body: JSON.stringify({ days: 7, model: 'ensemble' }),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`ML API ${res.status} ${txt}`);
+      }
+      const data = await res.json();
+      setPredictions(data?.predictions || null);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to fetch predictions:', error);
+      setPredictions(null);
+    } finally {
+      setLoadingPredictions(false);
+    }
   };
 
   // FIXED: Load today's data using dedicated endpoint with enhanced debugging
   async function loadTodayData() {
     setLoading(true); setErr(''); setDebugInfo(null);
     logDebug('loadTodayData', { selectedPlatform });
-    
+
     try {
       const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
-      const data = api 
+      const data = api
         ? await api.health().then(() => http('GET', `/api/v1/analytics/today${platformParam}`)).catch(() => http('GET', `/api/v1/analytics/today${platformParam}`))
         : await http('GET', `/api/v1/analytics/today${platformParam}`);
-      
+
       logDebug('Today API Response', data);
       setDebugInfo(data.debug || null);
-      
+
       setSummary({
         success: true,
         totalRevenue: data.totalRevenue || 0,
@@ -129,16 +167,16 @@ const Dashboard = () => {
   async function loadYesterdayData() {
     setLoading(true); setErr(''); setDebugInfo(null);
     logDebug('loadYesterdayData', { selectedPlatform });
-    
+
     try {
       const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
-      const data = api 
+      const data = api
         ? await api.health().then(() => http('GET', `/api/v1/analytics/yesterday${platformParam}`)).catch(() => http('GET', `/api/v1/analytics/yesterday${platformParam}`))
         : await http('GET', `/api/v1/analytics/yesterday${platformParam}`);
-      
+
       logDebug('Yesterday API Response', data);
       setDebugInfo(data.debug || null);
-      
+
       setSummary({
         success: true,
         totalRevenue: data.totalRevenue || 0,
@@ -162,24 +200,22 @@ const Dashboard = () => {
   async function loadSummary(range = '7d') {
     setLoading(true); setErr(''); setDebugInfo(null);
     logDebug('loadSummary', { range, selectedPlatform });
-    
+
     try {
       let data;
       if (api && api.dashboardSummary) {
-        // Use the api lib if available
         data = await api.dashboardSummary(range);
       } else {
-        // Fallback to direct HTTP
         let url = `/api/v1/analytics/dashboard-summary?range=${encodeURIComponent(range)}`;
         if (selectedPlatform !== 'all') {
           url += `&platform=${selectedPlatform}`;
         }
         data = await http('GET', url);
       }
-      
+
       logDebug('Summary API Response', data);
       setDebugInfo(data.debug || null);
-      
+
       setSummary(data);
       setTrend(data.salesTrend || []);
       setQuickDateFilter(range);
@@ -195,33 +231,27 @@ const Dashboard = () => {
   async function loadCustomRange(startISO, endISO) {
     setLoading(true); setErr(''); setDebugInfo(null);
     logDebug('loadCustomRange', { startISO, endISO, selectedPlatform });
-    
+
     try {
       let t, m;
-      
+
       if (api && api.salesTrend && api.metrics) {
-        // Use the api lib if available
         t = await api.salesTrend(startISO, endISO);
         m = await api.metrics({ start_date: startISO, end_date: endISO, platform: selectedPlatform });
       } else {
-        // Fallback to direct HTTP
         const platformParam = selectedPlatform !== 'all' ? `&platform=${selectedPlatform}` : '';
         t = await http('GET', `/api/v1/analytics/sales-trend?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}${platformParam}`);
         m = await http('GET', `/api/v1/analytics/metrics?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&platform=${selectedPlatform}`);
       }
-      
+
       logDebug('Custom Trend API Response', t);
       logDebug('Custom Metrics API Response', m);
-      
+
       setTrend(t.data || []);
-      
-      // Combine debug info from both calls
-      const combinedDebug = {
-        trend: t.debug,
-        metrics: m.debug
-      };
+
+      const combinedDebug = { trend: t.debug, metrics: m.debug };
       setDebugInfo(combinedDebug);
-      
+
       setSummary({
         success: true,
         range: { start: startISO, end: endISO, days: Math.max(1, (new Date(endISO) - new Date(startISO)) / 86400000 + 1) },
@@ -244,7 +274,7 @@ const Dashboard = () => {
   const handleQuickDateFilter = async (filter) => {
     logDebug('handleQuickDateFilter', { filter, selectedPlatform });
     setQuickDateFilter(filter);
-    
+
     if (filter === 'today') {
       await loadTodayData();
     } else if (filter === 'yesterday') {
@@ -267,8 +297,7 @@ const Dashboard = () => {
   const handlePlatformChange = async (platform) => {
     logDebug('handlePlatformChange', { from: selectedPlatform, to: platform });
     setSelectedPlatform(platform);
-    
-    // Wait for state update then reload data
+
     setTimeout(async () => {
       if (quickDateFilter === 'today') {
         await loadTodayData();
@@ -287,7 +316,7 @@ const Dashboard = () => {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     logDebug('handleRefresh', { quickDateFilter, dateRange, selectedPlatform });
-    
+
     try {
       if (quickDateFilter === 'today') {
         await loadTodayData();
@@ -310,16 +339,16 @@ const Dashboard = () => {
     setIsRefreshing(true);
     try {
       const days = quickDateFilter === '30d' ? 30 : quickDateFilter === '90d' ? 90 : 7;
-      
+
       if (api && api.syncShopify) {
         await api.syncShopify(days);
       } else {
         await http('POST', `/api/v1/sync/shopify?days=${days}`);
       }
-      
-      // Reload data after sync
+
       await handleRefresh();
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.error('Sync failed:', e);
       setErr(`Sync failed: ${e.message}`);
     } finally {
@@ -327,10 +356,12 @@ const Dashboard = () => {
     }
   };
 
-  // FIXED: Load initial data on component mount
+  // FIXED: Load initial data + predictions on component mount
   useEffect(() => {
     logDebug('useEffect - Initial load', {});
     loadSummary('7d');
+    fetchPredictions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const totalRevenue = summary?.totalRevenue ?? 0;
@@ -350,6 +381,61 @@ const Dashboard = () => {
     { title: 'Total Orders', value: totalOrders.toLocaleString(), change: '—', trend: 'flat', icon: ShoppingCart, color: 'from-blue-400 to-indigo-600' },
     { title: 'Avg Order Value', value: `$${avgOrderVal.toFixed(2)}`, change: '—', trend: 'flat', icon: TrendingUp, color: 'from-orange-400 to-red-500' }
   ];
+
+  // Small inner component for prediction cards (can read parent state)
+  const PredictionCards = () => (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="backdrop-blur-xl bg-gradient-to-br from-violet-500/20 to-purple-600/20 rounded-3xl p-6 border border-violet-500/30 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <Brain className="w-8 h-8 text-violet-400" />
+            <h3 className="text-white font-semibold">AI Revenue Prediction</h3>
+          </div>
+          <Target className="w-5 h-5 text-violet-400 animate-pulse" />
+        </div>
+        <p className="text-3xl font-bold text-white mb-2">
+          {loadingPredictions ? 'Calculating…' : `$${Number(predictions?.[0]?.prediction ?? 0).toFixed(2)}`}
+        </p>
+        <p className="text-violet-300 text-sm">Next 7 days forecast</p>
+        <div className="mt-4 flex items-center justify-between">
+          <span className="text-xs text-white/60">Confidence: 92%</span>
+          <span className="text-xs text-green-400">LSTM + ARIMA</span>
+        </div>
+      </div>
+
+      <div className="backdrop-blur-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 rounded-3xl p-6 border border-cyan-500/30 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <Activity className="w-8 h-8 text-cyan-400" />
+            <h3 className="text-white font-semibold">Trend Analysis</h3>
+          </div>
+          <TrendingUp className="w-5 h-5 text-cyan-400" />
+        </div>
+        <p className="text-3xl font-bold text-white mb-2">+15.3%</p>
+        <p className="text-cyan-300 text-sm">Expected growth</p>
+        <div className="mt-4 flex items-center justify-between">
+          <span className="text-xs text-white/60">Model: Ensemble</span>
+          <span className="text-xs text-cyan-400">High confidence</span>
+        </div>
+      </div>
+
+      <div className="backdrop-blur-xl bg-gradient-to-br from-pink-500/20 to-rose-600/20 rounded-3xl p-6 border border-pink-500/30 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <Clock className="w-8 h-8 text-pink-400" />
+            <h3 className="text-white font-semibold">Best Sales Time</h3>
+          </div>
+          <Target className="w-5 h-5 text-pink-400" />
+        </div>
+        <p className="text-3xl font-bold text-white mb-2">Thursday</p>
+        <p className="text-pink-300 text-sm">Peak performance day</p>
+        <div className="mt-4 flex items-center justify-between">
+          <span className="text-xs text-white/60">Based on patterns</span>
+          <span className="text-xs text-pink-400">2–4 PM peak</span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -388,7 +474,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* FIXED: Enhanced status indicator with debug info */}
+        {/* Status banner */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex flex-col space-y-4">
             <div className="flex justify-between items-center">
@@ -402,8 +488,8 @@ const Dashboard = () => {
                 API: {API_BASE || 'Not configured'}
               </span>
             </div>
-            
-            {/* Debug information panel */}
+
+            {/* Debug panel (dev only) */}
             {debugInfo && process.env.NODE_ENV === 'development' && (
               <div className="bg-slate-800/50 rounded-xl p-4 text-xs">
                 <details>
@@ -421,6 +507,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Date filters */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
             <div className="flex flex-wrap gap-3">
@@ -454,8 +541,8 @@ const Dashboard = () => {
               >
                 <Calendar className="w-5 h-5 text-indigo-300" />
                 <span className="text-sm font-medium">
-                  {dateRange.start && dateRange.end 
-                    ? `${dateRange.start} to ${dateRange.end}` 
+                  {dateRange.start && dateRange.end
+                    ? `${dateRange.start} to ${dateRange.end}`
                     : 'Custom Range'
                   }
                 </span>
@@ -464,11 +551,11 @@ const Dashboard = () => {
 
               {showDatePicker && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-40" 
+                  <div
+                    className="fixed inset-0 z-40"
                     onClick={() => setShowDatePicker(false)}
                   ></div>
-                  
+
                   <div className="absolute top-full right-0 mt-2 bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-2xl p-6 shadow-2xl z-50 min-w-[320px]">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-white font-semibold">Select Date Range</h3>
@@ -479,7 +566,7 @@ const Dashboard = () => {
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    
+
                     <div className="space-y-4">
                       <div>
                         <label className="block text-white/70 text-sm font-medium mb-2">Start Date</label>
@@ -492,7 +579,7 @@ const Dashboard = () => {
                           className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50"
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-white/70 text-sm font-medium mb-2">End Date</label>
                         <input
@@ -504,7 +591,7 @@ const Dashboard = () => {
                           className="w-full bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50"
                         />
                       </div>
-                      
+
                       {dateRange.start && dateRange.end && (
                         <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
                           <p className="text-green-400 text-sm">
@@ -520,6 +607,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Platform filter */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-semibold flex items-center">
@@ -530,7 +618,7 @@ const Dashboard = () => {
               {selectedPlatform === 'all' ? 'All Platforms' : selectedPlatform === 'shopify' ? 'Shopify Only' : 'BestBuy Only'}
             </span>
           </div>
-          
+
           <div className="flex space-x-4">
             {[
               { id: 'all', name: 'All Platforms', color: 'from-white to-purple-200', available: true },
@@ -554,24 +642,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {loading && (
-          <div className="mb-6 backdrop-blur-xl bg-white/10 rounded-2xl p-4 border border-white/20">
-            <div className="flex items-center space-x-3">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              <span className="text-white/80">Loading analytics data...</span>
-            </div>
-          </div>
-        )}
-        
-        {err && !loading && (
-          <div className="bg-red-500/20 border border-red-500/40 rounded-xl p-4 text-red-200 mb-6">
-            <div className="flex items-center space-x-2">
-              <span className="text-red-400">⚠️</span>
-              <span>Error: {err}</span>
-            </div>
-          </div>
-        )}
-
+        {/* KPI cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {mainMetrics.map((metric, index) => {
             const Icon = metric.icon;
@@ -595,6 +666,7 @@ const Dashboard = () => {
           })}
         </div>
 
+        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
@@ -605,7 +677,7 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-            
+
             {trend && trend.length > 0 ? (
               <ResponsiveContainer width="100%" height={400}>
                 <AreaChart data={trend}>
@@ -642,11 +714,11 @@ const Dashboard = () => {
                     }}
                     labelFormatter={(label) => {
                       try {
-                        return new Date(label).toLocaleDateString('en-US', { 
-                          weekday: 'short', 
-                          year: 'numeric', 
-                          month: 'short', 
-                          day: 'numeric' 
+                        return new Date(label).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
                         });
                       } catch {
                         return label;
@@ -669,7 +741,7 @@ const Dashboard = () => {
 
           <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">Platform Revenue</h3>
-            
+
             {platformData && platformData.length > 0 ? (
               <ResponsiveContainer width="100%" height={400}>
                 <PieChart>
@@ -709,15 +781,15 @@ const Dashboard = () => {
                 </div>
               </div>
             )}
-            
+
             {/* Platform legend */}
             {platformData && platformData.length > 0 && (
               <div className="mt-4 space-y-2">
                 {platformData.map((platform, index) => (
                   <div key={index} className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
+                      <div
+                        className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: platform.color }}
                       ></div>
                       <span className="text-white/80 text-sm">{platform.name}</span>
@@ -737,96 +809,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-// Add prediction state
-const [predictions, setPredictions] = useState(null);
-const [loadingPredictions, setLoadingPredictions] = useState(false);
+        {/* === Prediction Cards === */}
+        <PredictionCards />
 
-// Fetch predictions function
-const fetchPredictions = async () => {
-  setLoadingPredictions(true);
-  try {
-    const response = await fetch(`${ML_API_BASE}/api/v1/ml/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days: 7, model: 'ensemble' })
-    });
-    const data = await response.json();
-    setPredictions(data.predictions);
-  } catch (error) {
-    console.error('Failed to fetch predictions:', error);
-  } finally {
-    setLoadingPredictions(false);
-  }
-};
-
-// Add to useEffect
-useEffect(() => {
-  fetchPredictions();
-}, []);
-
-// Add Prediction Cards Component
-const PredictionCards = () => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-    <div className="backdrop-blur-xl bg-gradient-to-br from-violet-500/20 to-purple-600/20 rounded-3xl p-6 border border-violet-500/30 shadow-2xl">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <Brain className="w-8 h-8 text-violet-400" />
-          <h3 className="text-white font-semibold">AI Revenue Prediction</h3>
-        </div>
-        <Target className="w-5 h-5 text-violet-400 animate-pulse" />
-      </div>
-      <p className="text-3xl font-bold text-white mb-2">
-        ${predictions?.[0]?.prediction.toFixed(2) || '---'}
-      </p>
-      <p className="text-violet-300 text-sm">Next 7 days forecast</p>
-      <div className="mt-4 flex items-center justify-between">
-        <span className="text-xs text-white/60">Confidence: 92%</span>
-        <span className="text-xs text-green-400">LSTM + ARIMA</span>
-      </div>
-    </div>
-
-    <div className="backdrop-blur-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 rounded-3xl p-6 border border-cyan-500/30 shadow-2xl">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <Activity className="w-8 h-8 text-cyan-400" />
-          <h3 className="text-white font-semibold">Trend Analysis</h3>
-        </div>
-        <TrendingUp className="w-5 h-5 text-cyan-400" />
-      </div>
-      <p className="text-3xl font-bold text-white mb-2">
-        +15.3%
-      </p>
-      <p className="text-cyan-300 text-sm">Expected growth</p>
-      <div className="mt-4 flex items-center justify-between">
-        <span className="text-xs text-white/60">Model: Ensemble</span>
-        <span className="text-xs text-cyan-400">High confidence</span>
-      </div>
-    </div>
-
-    <div className="backdrop-blur-xl bg-gradient-to-br from-pink-500/20 to-rose-600/20 rounded-3xl p-6 border border-pink-500/30 shadow-2xl">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <Clock className="w-8 h-8 text-pink-400" />
-          <h3 className="text-white font-semibold">Best Sales Time</h3>
-        </div>
-        <Target className="w-5 h-5 text-pink-400" />
-      </div>
-      <p className="text-3xl font-bold text-white mb-2">
-        Thursday
-      </p>
-      <p className="text-pink-300 text-sm">Peak performance day</p>
-      <div className="mt-4 flex items-center justify-between">
-        <span className="text-xs text-white/60">Based on patterns</span>
-        <span className="text-xs text-pink-400">2-4 PM peak</span>
-      </div>
-    </div>
-  </div>
-);
-
-// Add the component before the footer
-{PredictionCards()}
-
-        {/* Enhanced footer with more detailed status */}
+        {/* Enhanced footer */}
         <div className="text-center">
           <div className="inline-flex items-center space-x-4 backdrop-blur-xl bg-white/10 rounded-full px-6 py-3 border border-white/20">
             <div className="flex items-center space-x-2">
@@ -841,17 +827,17 @@ const PredictionCards = () => (
             </span>
             <span className="text-white/40 text-sm">•</span>
             <span className="text-white/70 text-sm">
-              Period: {quickDateFilter === 'today' ? 'Today' : 
+              Period: {quickDateFilter === 'today' ? 'Today' :
                        quickDateFilter === 'yesterday' ? 'Yesterday' :
                        quickDateFilter === 'custom' ? 'Custom' :
                        quickDateFilter || '7 days'}
             </span>
           </div>
-          
-          {/* Additional debug info for developers */}
+
           {process.env.NODE_ENV === 'development' && (
             <div className="mt-4 text-xs text-white/40">
               <div>API Base: {API_BASE || 'Not configured'}</div>
+              <div>ML Base: {ML_API_BASE || 'Not configured'}</div>
               <div>Environment: {process.env.NODE_ENV}</div>
               <div>Last Updated: {new Date().toLocaleTimeString()}</div>
             </div>
