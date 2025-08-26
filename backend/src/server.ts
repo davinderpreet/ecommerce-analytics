@@ -1,12 +1,13 @@
-// backend/src/server.ts - FIXED VERSION WITH CORRECT IMPORT
+// backend/src/server.ts - COMPLETE FILE WITH INVENTORY MANAGEMENT
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import schedulerRoutes from './routes/scheduler';
+import inventoryRoutes from './routes/inventory';
 import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
-import { syncShopifyOrders } from './integrations/shopify'; // FIXED: Correct import path
+import { syncShopifyOrders } from './integrations/shopify';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/v1/scheduler', schedulerRoutes);
+app.use('/api/v1/inventory', inventoryRoutes);
 
 // Timezone configuration
 const USER_TIMEZONE = process.env.TZ || 'America/Toronto';
@@ -280,7 +282,7 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
   }
 });
 
-// FIXED: Shopify sync endpoint - now uses the proper pagination function
+// Shopify sync endpoint
 app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   console.log('🚀 SYNC ENDPOINT HIT - Using FIXED pagination from src/integrations/shopify.ts');
   
@@ -292,7 +294,6 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
   try {
     console.log('🚀 Calling syncShopifyOrders with FIXED PAGINATION...');
     
-    // Use the fixed syncShopifyOrders function instead of inline code
     const result = await syncShopifyOrders(days);
     
     console.log('🚀 Sync completed successfully!');
@@ -715,9 +716,17 @@ app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => 
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'E-commerce Analytics API',
-    version: '2.6.0',
+    version: '2.7.0',
     status: 'running',
-    features: ['Shopify-only focus', 'FIXED pagination', 'Real-time sync', 'Debug endpoints', 'Automated sync', 'Caching'],
+    features: [
+      'Shopify-only focus', 
+      'FIXED pagination', 
+      'Real-time sync', 
+      'Debug endpoints', 
+      'Automated sync', 
+      'Caching',
+      'Inventory Management'
+    ],
     timezone: USER_TIMEZONE,
     currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
     scheduler: scheduler.getStatus(),
@@ -737,7 +746,15 @@ app.get('/', (req: Request, res: Response) => {
       'POST /api/v1/scheduler/sync-today',
       'POST /api/v1/scheduler/sync-historical',
       'GET /api/v1/scheduler/cache/stats',
-      'POST /api/v1/scheduler/cache/clear'
+      'POST /api/v1/scheduler/cache/clear',
+      // Inventory endpoints
+      'GET /api/v1/inventory - Get all inventory items with metrics',
+      'GET /api/v1/inventory/:productId - Get detailed inventory for a product',
+      'POST /api/v1/inventory/sync - Sync inventory from Shopify',
+      'POST /api/v1/inventory/:productId/adjust - Adjust inventory manually',
+      'POST /api/v1/inventory/reorder - Create purchase order',
+      'GET /api/v1/inventory/alerts/active - Get active alerts',
+      'PUT /api/v1/inventory/alerts/:alertId/resolve - Resolve an alert'
     ]
   });
 });
@@ -751,8 +768,9 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
-  console.log('📊 E-commerce Analytics API v2.6 ready');
-  console.log('🔧 Features: Shopify + FIXED pagination + Real-time sync + Debug endpoints + Automated sync + Caching');
+  console.log('📊 E-commerce Analytics API v2.7 ready');
+  console.log('🔧 Features: Shopify + FIXED pagination + Real-time sync + Debug endpoints + Automated sync + Caching + Inventory Management');
+  console.log('📦 Inventory Management system active');
   console.log('📅 All dates now use consistent timezone logic');
   console.log('🌍 Timezone:', USER_TIMEZONE);
   console.log('⏰ Current time:', DateUtils.getCurrentDateInTimezone().toLocaleString());
