@@ -1,9 +1,9 @@
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import { syncShopifyOrders } from '../integrations/shopify';
 
 class SchedulerService {
   private isRunning = false;
-  private syncJob: cron.ScheduledTask | null = null;
+  private syncJob: any | null = null; // Using any instead of ScheduledTask
   private historicalSyncInProgress = false;
 
   /**
@@ -110,11 +110,12 @@ class SchedulerService {
         stats
       };
 
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ Historical sync failed:', error);
       return {
         success: false,
-        message: `Historical sync failed: ${error.message}`
+        message: `Historical sync failed: ${errorMessage}`
       };
     } finally {
       this.historicalSyncInProgress = false;
@@ -162,11 +163,12 @@ class SchedulerService {
         success: true,
         message: `Today's sync completed in ${duration}ms`
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ Manual today sync failed:', error);
       return {
         success: false,
-        message: `Manual sync failed: ${error.message}`
+        message: `Manual sync failed: ${errorMessage}`
       };
     }
   }
