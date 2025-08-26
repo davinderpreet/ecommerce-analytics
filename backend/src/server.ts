@@ -14,51 +14,87 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
-// IMPROVED: Robust date handling utilities
+// FIXED: Robust date handling utilities with proper timezone support
 const DateUtils = {
-  // Parse date string to proper start/end of day
+  // Parse date string to proper start/end of day in local timezone
   parseFilterDate: (dateStr: string | undefined, defaultDate?: Date) => {
     if (!dateStr) {
       if (!defaultDate) return null;
       dateStr = defaultDate.toISOString().slice(0, 10);
     }
     
-    // Handle YYYY-MM-DD format
-    const date = new Date(dateStr + 'T00:00:00.000Z');
-    if (isNaN(date.getTime())) {
+    // Parse as local date, not UTC
+    const [year, month, day] = dateStr.split('-').map(Number);
+    if (!year || !month || !day) {
+      throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
+    }
+    
+    // Create dates in local timezone
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+    
+    if (isNaN(startOfDay.getTime()) || isNaN(endOfDay.getTime())) {
       throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
     }
     
     return {
-      startOfDay: new Date(dateStr + 'T00:00:00.000Z'),
-      endOfDay: new Date(dateStr + 'T23:59:59.999Z'),
+      startOfDay,
+      endOfDay,
       dateStr
     };
   },
 
-  // Get date range for relative periods (7d, 30d, etc)
+  // Get date range for relative periods (7d, 30d, etc) in local timezone
   getRelativeDateRange: (days: number) => {
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
+    const now = new Date();
     
-    const start = new Date(end);
-    start.setDate(end.getDate() - (days - 1));
-    start.setHours(0, 0, 0, 0);
+    // End of today in local timezone
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    
+    // Start of N days ago in local timezone
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1), 0, 0, 0, 0);
     
     return {
       start,
       end,
-      startStr: start.toISOString().slice(0, 10),
-      endStr: end.toISOString().slice(0, 10),
+      startStr: DateUtils.formatDateKey(start),
+      endStr: DateUtils.formatDateKey(end),
       days
     };
   },
 
-  // Format date for consistent API responses
-  formatDateKey: (date: Date) => date.toISOString().slice(0, 10),
+  // Format date for consistent API responses (local date)
+  formatDateKey: (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  },
   
   // Convert cents to dollars
-  toDollars: (cents: number | null | undefined) => ((cents ?? 0) / 100)
+  toDollars: (cents: number | null | undefined) => ((cents ?? 0) / 100),
+
+  // Get today's date range in local timezone
+  getTodayRange: () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return {
+      start: new Date(today.getTime()), // 00:00:00
+      end: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1), // 23:59:59.999
+      dateStr: DateUtils.formatDateKey(today)
+    };
+  },
+
+  // Get yesterday's date range in local timezone
+  getYesterdayRange: () => {
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    return {
+      start: new Date(yesterday.getTime()), // 00:00:00
+      end: new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1), // 23:59:59.999
+      dateStr: DateUtils.formatDateKey(yesterday)
+    };
+  }
 };
 
 // Test logging endpoint
@@ -217,6 +253,92 @@ app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
     console.error('🧪 Sync failed:', error.message);
     console.error('🧪 Error stack:', error.stack);
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// NEW: Today's data endpoint
+app.get('/api/v1/analytics/today', async (req: Request, res: Response) => {
+  try {
+    console.log('📅 Today endpoint hit');
+    const platform = String(req.query.platform ?? 'all');
+    const todayRange = DateUtils.getTodayRange();
+    
+    console.log('📅 Today range:', todayRange.start, 'to', todayRange.end);
+    
+    let whereClause: any = {
+      createdAt: { gte: todayRange.start, lte: todayRange.end }
+    };
+    
+    if (platform !== 'all') {
+      const channel = await prisma.channel.findUnique({ where: { code: platform } });
+      if (channel) whereClause.channelId = channel.id;
+    }
+    
+    const orders = await prisma.order.findMany({ where: whereClause });
+    console.log('📅 Today orders found:', orders.length);
+    
+    const totalRevenue = DateUtils.toDollars(orders.reduce((s, o) => s + (o.totalCents || 0), 0));
+    const totalOrders = orders.length;
+    const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
+    
+    res.json({
+      success: true,
+      date: todayRange.dateStr,
+      totalRevenue,
+      totalOrders,
+      avgOrderValue,
+      orders: orders.map(o => ({
+        number: o.number,
+        total: DateUtils.toDollars(o.totalCents),
+        createdAt: o.createdAt
+      }))
+    });
+  } catch (e: any) {
+    console.error('📅 Today endpoint error:', e);
+    res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// NEW: Yesterday's data endpoint
+app.get('/api/v1/analytics/yesterday', async (req: Request, res: Response) => {
+  try {
+    console.log('📅 Yesterday endpoint hit');
+    const platform = String(req.query.platform ?? 'all');
+    const yesterdayRange = DateUtils.getYesterdayRange();
+    
+    console.log('📅 Yesterday range:', yesterdayRange.start, 'to', yesterdayRange.end);
+    
+    let whereClause: any = {
+      createdAt: { gte: yesterdayRange.start, lte: yesterdayRange.end }
+    };
+    
+    if (platform !== 'all') {
+      const channel = await prisma.channel.findUnique({ where: { code: platform } });
+      if (channel) whereClause.channelId = channel.id;
+    }
+    
+    const orders = await prisma.order.findMany({ where: whereClause });
+    console.log('📅 Yesterday orders found:', orders.length);
+    
+    const totalRevenue = DateUtils.toDollars(orders.reduce((s, o) => s + (o.totalCents || 0), 0));
+    const totalOrders = orders.length;
+    const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
+    
+    res.json({
+      success: true,
+      date: yesterdayRange.dateStr,
+      totalRevenue,
+      totalOrders,
+      avgOrderValue,
+      orders: orders.map(o => ({
+        number: o.number,
+        total: DateUtils.toDollars(o.totalCents),
+        createdAt: o.createdAt
+      }))
+    });
+  } catch (e: any) {
+    console.error('📅 Yesterday endpoint error:', e);
+    res.status(500).json({ success: false, error: e?.message });
   }
 });
 

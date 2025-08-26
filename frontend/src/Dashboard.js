@@ -59,6 +59,60 @@ const Dashboard = () => {
     return { start: yesterdayStr, end: yesterdayStr };
   };
 
+  // NEW: Load today's data using dedicated endpoint
+  async function loadTodayData() {
+    setLoading(true); setErr('');
+    try {
+      const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
+      const data = await http('GET', `/api/v1/analytics/today${platformParam}`);
+      
+      // Transform to match dashboard format
+      setSummary({
+        success: true,
+        totalRevenue: data.totalRevenue,
+        totalOrders: data.totalOrders,
+        avgOrderValue: data.avgOrderValue,
+        range: { start: data.date, end: data.date, days: 1 },
+        platformComparison: [],
+        salesTrend: [{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]
+      });
+      setTrend([{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]);
+      setQuickDateFilter('today');
+      setDateRange({ start: '', end: '' });
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // NEW: Load yesterday's data using dedicated endpoint
+  async function loadYesterdayData() {
+    setLoading(true); setErr('');
+    try {
+      const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
+      const data = await http('GET', `/api/v1/analytics/yesterday${platformParam}`);
+      
+      // Transform to match dashboard format
+      setSummary({
+        success: true,
+        totalRevenue: data.totalRevenue,
+        totalOrders: data.totalOrders,
+        avgOrderValue: data.avgOrderValue,
+        range: { start: data.date, end: data.date, days: 1 },
+        platformComparison: [],
+        salesTrend: [{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]
+      });
+      setTrend([{ date: data.date, revenue: data.totalRevenue, orders: data.totalOrders }]);
+      setQuickDateFilter('yesterday');
+      setDateRange({ start: '', end: '' });
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   /** ====== Loaders ====== **/
   async function loadSummary(range = '7d') {
     setLoading(true); setErr('');
@@ -120,21 +174,17 @@ const Dashboard = () => {
     }
   }
 
-  /** ====== FIXED UI handlers ====== **/
+  /** ====== FIXED UI handlers with dedicated endpoints ====== **/
   const handleQuickDateFilter = async (filter) => {
     console.log('handleQuickDateFilter called with:', filter);
     setQuickDateFilter(filter);
     
     if (filter === 'today') {
-      const range = getTodayRange();
-      console.log('Loading today data for range:', range);
-      setDateRange(range);
-      await loadCustomRange(range.start, range.end);
+      console.log('Loading today data using dedicated endpoint');
+      await loadTodayData();
     } else if (filter === 'yesterday') {
-      const range = getYesterdayRange();
-      console.log('Loading yesterday data for range:', range);
-      setDateRange(range);
-      await loadCustomRange(range.start, range.end);
+      console.log('Loading yesterday data using dedicated endpoint');
+      await loadYesterdayData();
     } else if (filter === '7d' || filter === '30d' || filter === '90d') {
       console.log('Loading summary data for:', filter);
       await loadSummary(filter);
