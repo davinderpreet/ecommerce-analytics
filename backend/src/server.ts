@@ -3,6 +3,9 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import schedulerRoutes from './routes/scheduler';
+import { scheduler } from './services/scheduler';
+import { cacheService } from './services/cache';
 
 dotenv.config();
 
@@ -13,6 +16,9 @@ const prisma = new PrismaClient();
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use('/api/v1/scheduler', schedulerRoutes);
 
 // Timezone configuration
 const USER_TIMEZONE = process.env.TZ || 'America/Toronto';
@@ -811,11 +817,12 @@ app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => 
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'E-commerce Analytics API',
-    version: '2.4.0',
+    version: '2.5.0',
     status: 'running',
-    features: ['Multi-platform support', 'FIXED timezone handling', 'Real-time sync', 'Debug endpoints', 'Clean TypeScript'],
+    features: ['Shopify-only focus', 'FIXED timezone handling', 'Real-time sync', 'Debug endpoints', 'Automated sync', 'Caching'],
     timezone: USER_TIMEZONE,
     currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
+    scheduler: scheduler.getStatus(),
     endpoints: [
       'GET /api/v1/health',
       'GET /api/v1/test-log',
@@ -825,7 +832,14 @@ app.get('/', (req: Request, res: Response) => {
       'GET /api/v1/analytics/dashboard-summary?range=7d&platform=all',
       'GET /api/v1/analytics/metrics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
       'GET /api/v1/analytics/sales-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&platform=all',
-      'GET /api/v1/debug/orders?dateType=yesterday&platform=all'
+      'GET /api/v1/debug/orders?dateType=yesterday&platform=all',
+      'GET /api/v1/scheduler/status',
+      'POST /api/v1/scheduler/start',
+      'POST /api/v1/scheduler/stop',
+      'POST /api/v1/scheduler/sync-today',
+      'POST /api/v1/scheduler/sync-historical',
+      'GET /api/v1/scheduler/cache/stats',
+      'POST /api/v1/scheduler/cache/clear'
     ]
   });
 });
@@ -839,11 +853,16 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
-  console.log('📊 E-commerce Analytics API v2.4 ready');
-  console.log('🔧 Features: Multi-platform + FIXED timezone handling + Debug endpoints + Clean TypeScript');
+  console.log('📊 E-commerce Analytics API v2.5 ready');
+  console.log('🔧 Features: Multi-platform + FIXED timezone handling + Debug endpoints + Automated sync + Caching');
   console.log('📅 All dates now use consistent timezone logic');
   console.log('🌍 Timezone:', USER_TIMEZONE);
   console.log('⏰ Current time:', DateUtils.getCurrentDateInTimezone().toLocaleString());
+  
+  // Start the 3-minute scheduler for today's data
+  console.log('🔄 Starting automated sync scheduler...');
+  scheduler.start();
+  console.log('✅ Scheduler started - syncing today\'s data every 3 minutes');
 });
 
 export default app;

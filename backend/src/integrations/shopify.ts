@@ -182,3 +182,153 @@ export async function syncShopifyOrders(days = 7): Promise<void> {
     cursor = pageInfo?.hasNextPage ? (pageInfo.endCursor ?? null) : null;
   } while (cursor);
 }
+
+/**
+ * Sync Shopify orders for a specific date range
+ * Used for historical data sync
+ */
+export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date): Promise<void> {
+  if (!SHOP || !TOKEN) throw new Error("Missing SHOPIFY_SHOP_DOMAIN or SHOPIFY_ADMIN_ACCESS_TOKEN");
+
+  const channel = await ensureShopifyChannel();
+
+  const query = `
+    query Orders($cursor: String, $startDate: DateTime, $endDate: DateTime) {
+      orders(first: 100, query: "created_at:>=$startDate AND created_at:<=$endDate", after: $cursor, reverse: true) {
+        edges {
+          cursor
+          node {
+            id name createdAt currencyCode
+            subtotalPriceSet { shopMoney { amount } }
+            totalTaxSet { shopMoney { amount } }
+            totalShippingPriceSet { shopMoney { amount } }
+            totalPriceSet { shopMoney { amount } }
+            customer { email }
+            lineItems(first: 250) {
+              edges {
+                node {
+                  id title sku quantity
+                  originalUnitPriceSet { shopMoney { amount } }
+                  discountedTotalSet   { shopMoney { amount } }
+                }
+              }
+            }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`;
+
+  let cursor: string | null = null;
+  let orderCount = 0;
+
+  console.log(`📅 Syncing orders from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+
+  do {
+    const data: OrdersQueryResp = await shopifyGraphQL<OrdersQueryResp>(query, {
+      cursor,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    });
+
+    const edges = data?.data?.orders?.edges ?? [];
+    
+    for (const e of edges) {
+      const o: OrderResp = e.node;
+      const toCents = (s: string) => Math.round(parseFloat(s || "0") * 100);
+
+      const subtotal = toCents(o.subtotalPriceSet.shopMoney.amount);
+      const tax = toCents(o.totalTaxSet.shopMoney.amount);
+      const ship = toCents(o.totalShippingPriceSet.shopMoney.amount);
+      const total = toCents(o.totalPriceSet.shopMoney.amount);
+
+      // Upsert order
+      const order = await prisma.order.upsert({
+        where: { channelRef: o.id },
+        update: {
+          number: o.name,
+          createdAt: new Date(o.createdAt),
+          currency: o.currencyCode,
+          subtotalCents: subtotal,
+          taxCents: tax,
+          shippingCents: ship,
+          totalCents: total,
+          customerEmail: o.customer?.email ?? null,
+        },
+        create: {
+          channelId: channel.id,
+          channelRef: o.id,
+          number: o.name,
+          createdAt: new Date(o.createdAt),
+          currency: o.currencyCode,
+          subtotalCents: subtotal,
+          taxCents: tax,
+          shippingCents: ship,
+          totalCents: total,
+          customerEmail: o.customer?.email ?? null,
+        },
+      });
+
+      // Line items
+      for (const liEdge of o.lineItems.edges) {
+        const li: LineItemResp = liEdge.node;
+        const unit = toCents(li.originalUnitPriceSet.shopMoney.amount);
+        const line = toCents(li.discountedTotalSet.shopMoney.amount);
+        const sku = li.sku || undefined;
+
+        // Ensure product by SKU
+        let productId: string | undefined;
+        if (sku) {
+          let product = await prisma.product.findUnique({ where: { sku } });
+          if (!product) {
+            product = await prisma.product.create({
+              data: {
+                channelId: channel.id,
+                sku,
+                title: li.title,
+                currency: o.currencyCode,
+              },
+            });
+          }
+          productId = product.id;
+        }
+
+        // Check if order item already exists to avoid duplicates
+        const existingItem = await prisma.orderItem.findFirst({
+          where: {
+            orderId: order.id,
+            sku: sku || undefined,
+            title: li.title,
+          },
+        });
+
+        if (!existingItem) {
+          await prisma.orderItem.create({
+            data: {
+              orderId: order.id,
+              productId,
+              sku,
+              title: li.title,
+              quantity: li.quantity,
+              priceCents: unit,
+              totalCents: line,
+            },
+          });
+        }
+      }
+      
+      orderCount++;
+    }
+
+    const pageInfo: { hasNextPage?: boolean; endCursor?: string | null } =
+      (data?.data?.orders?.pageInfo as any) ?? {};
+    cursor = pageInfo?.hasNextPage ? (pageInfo.endCursor ?? null) : null;
+    
+    // Add small delay to respect API limits
+    if (cursor) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  } while (cursor);
+
+  console.log(`✅ Synced ${orderCount} orders for date range`);
+}
