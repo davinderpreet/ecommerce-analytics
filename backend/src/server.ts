@@ -1,4 +1,4 @@
-// backend/src/server.ts - CLEAN VERSION WITH NO SYNTAX ERRORS
+// backend/src/server.ts - COMPLETE VERSION WITH FIXED PAGINATION
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import schedulerRoutes from './routes/scheduler';
 import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
+import { syncShopifyOrders } from '../lib/shopify';
 
 dotenv.config();
 
@@ -279,147 +280,44 @@ app.get('/api/v1/debug/orders', async (req: Request, res: Response) => {
   }
 });
 
-// Shopify sync endpoint
+// FIXED: Shopify sync endpoint - now uses the proper pagination function
 app.all('/api/v1/sync/shopify', async (req: Request, res: Response) => {
-  console.log('🧪 SYNC ENDPOINT HIT - Starting debug');
+  console.log('🚀 SYNC ENDPOINT HIT - Using FIXED pagination from lib/shopify.ts');
   
   const days = Number(req.query.days ?? 7);
-  console.log('🧪 Days:', days);
-  console.log('🧪 Shop domain:', process.env.SHOPIFY_SHOP_DOMAIN);
-  console.log('🧪 Token exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
-  console.log('🧪 User timezone:', USER_TIMEZONE);
+  console.log('🚀 Days:', days);
+  console.log('🚀 Shop domain:', process.env.SHOPIFY_SHOP_DOMAIN);
+  console.log('🚀 Token exists:', !!process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
   
   try {
-    console.log('🧪 Starting inline Shopify sync...');
+    console.log('🚀 Calling syncShopifyOrders with FIXED PAGINATION...');
     
-    const SHOP = process.env.SHOPIFY_SHOP_DOMAIN!;
-    const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
-    const API_VER = '2024-07';
+    // Use the fixed syncShopifyOrders function instead of inline code
+    const result = await syncShopifyOrders(days);
     
-    if (!SHOP || !TOKEN) {
-      res.status(400).json({ ok: false, error: 'Missing Shopify credentials' });
-      return;
-    }
-    
-    console.log('🧪 About to ensure channel...');
-    
-    // Ensure shopify channel exists
-    let channel = await prisma.channel.findUnique({ where: { code: 'shopify' } });
-    if (!channel) {
-      console.log('🧪 Creating shopify channel...');
-      channel = await prisma.channel.create({ data: { name: 'Shopify', code: 'shopify' } });
-    }
-    console.log('🧪 Channel ID:', channel.id);
-    
-    // Calculate date range using improved date utilities with proper timezone
-    const dateRange = DateUtils.getRelativeDateRange(days);
-    console.log('🧪 Fetching orders since:', dateRange.start.toISOString());
-    DateUtils.debugDateRange('Sync Date Range', dateRange.start, dateRange.end);
-    
-    // GraphQL query
-    const sinceDate = dateRange.start.toISOString();
-    const query = `
-      query {
-        orders(first: 50, query: "created_at:>=${sinceDate}", reverse: true) {
-          edges {
-            node {
-              id name createdAt currencyCode
-              totalPriceSet { shopMoney { amount } }
-              subtotalPriceSet { shopMoney { amount } }
-              totalTaxSet { shopMoney { amount } }
-              totalShippingPriceSet { shopMoney { amount } }
-            }
-          }
-        }
-      }`;
-    
-    console.log('🧪 About to make GraphQL request...');
-    
-    // Make API call
-    const response = await fetch(`https://${SHOP}/admin/api/${API_VER}/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': TOKEN,
-      },
-      body: JSON.stringify({ query }),
+    console.log('🚀 Sync completed successfully!');
+    console.log('🚀 Results:', {
+      totalOrdersProcessed: result.totalOrdersProcessed,
+      totalOrdersCreated: result.totalOrdersCreated,
+      totalOrdersUpdated: result.totalOrdersUpdated,
+      totalBatches: result.totalBatches,
+      duration: result.duration
     });
     
-    console.log('🧪 GraphQL response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('🧪 GraphQL request failed:', errorText);
-      res.status(500).json({ ok: false, error: `Shopify API error: ${response.status}` });
-      return;
-    }
-    
-    const data: any = await response.json();
-    console.log('🧪 GraphQL response received');
-    
-    if (data.errors) {
-      console.error('🧪 GraphQL errors:', data.errors);
-      res.status(500).json({ ok: false, error: 'GraphQL errors', details: data.errors });
-      return;
-    }
-    
-    const orders = data?.data?.orders?.edges ?? [];
-    console.log('🧪 Found orders:', orders.length);
-    
-    let processedCount = 0;
-    for (const edge of orders) {
-      const order = edge.node;
-      const orderCreatedAt = new Date(order.createdAt);
-      console.log('🧪 Processing order:', order.name, 'Total:', order.totalPriceSet.shopMoney.amount, 'Date:', order.createdAt);
-      console.log('🧪 Order date parsed:', orderCreatedAt.toISOString(), '(', orderCreatedAt.toLocaleString(), ')');
-      console.log('🧪 Order date key:', DateUtils.formatDateKey(orderCreatedAt));
-      
-      const totalCents = Math.round(parseFloat(order.totalPriceSet.shopMoney.amount) * 100);
-      const subtotalCents = Math.round(parseFloat(order.subtotalPriceSet.shopMoney.amount) * 100);
-      const taxCents = Math.round(parseFloat(order.totalTaxSet.shopMoney.amount) * 100);
-      const shippingCents = Math.round(parseFloat(order.totalShippingPriceSet.shopMoney.amount) * 100);
-      
-      try {
-        const savedOrder = await prisma.order.upsert({
-          where: { channelRef: order.id },
-          update: {
-            number: order.name,
-            createdAt: orderCreatedAt,
-            currency: order.currencyCode,
-            subtotalCents,
-            taxCents,
-            shippingCents,
-            totalCents,
-            customerEmail: null,
-          },
-          create: {
-            channelId: channel.id,
-            channelRef: order.id,
-            number: order.name,
-            createdAt: orderCreatedAt,
-            currency: order.currencyCode,
-            subtotalCents,
-            taxCents,
-            shippingCents,
-            totalCents,
-            customerEmail: null,
-          },
-        });
-        
-        console.log('🧪 Saved order:', savedOrder.number, 'ID:', savedOrder.id, 'Created:', savedOrder.createdAt);
-        processedCount++;
-        
-      } catch (dbError: any) {
-        console.error('🧪 Database error:', dbError.message);
-      }
-    }
-    
-    console.log('🧪 Sync complete! Processed:', processedCount, 'orders');
-    
-    res.json({ ok: true, source: 'shopify', days, found: orders.length, processed: processedCount });
+    res.json({ 
+      ok: true, 
+      source: 'shopify', 
+      days, 
+      found: result.totalOrdersProcessed,
+      processed: result.totalOrdersProcessed,
+      created: result.totalOrdersCreated,
+      updated: result.totalOrdersUpdated,
+      batches: result.totalBatches,
+      duration: result.duration
+    });
     
   } catch (error: any) {
-    console.error('🧪 Sync failed:', error.message);
+    console.error('🚀 Sync failed:', error.message);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -817,9 +715,9 @@ app.get('/api/v1/analytics/sales-trend', async (req: Request, res: Response) => 
 app.get('/', (req: Request, res: Response) => {
   res.json({
     message: 'E-commerce Analytics API',
-    version: '2.5.0',
+    version: '2.6.0',
     status: 'running',
-    features: ['Shopify-only focus', 'FIXED timezone handling', 'Real-time sync', 'Debug endpoints', 'Automated sync', 'Caching'],
+    features: ['Shopify-only focus', 'FIXED pagination', 'Real-time sync', 'Debug endpoints', 'Automated sync', 'Caching'],
     timezone: USER_TIMEZONE,
     currentTime: DateUtils.getCurrentDateInTimezone().toLocaleString(),
     scheduler: scheduler.getStatus(),
@@ -853,8 +751,8 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
-  console.log('📊 E-commerce Analytics API v2.5 ready');
-  console.log('🔧 Features: Multi-platform + FIXED timezone handling + Debug endpoints + Automated sync + Caching');
+  console.log('📊 E-commerce Analytics API v2.6 ready');
+  console.log('🔧 Features: Shopify + FIXED pagination + Real-time sync + Debug endpoints + Automated sync + Caching');
   console.log('📅 All dates now use consistent timezone logic');
   console.log('🌍 Timezone:', USER_TIMEZONE);
   console.log('⏰ Current time:', DateUtils.getCurrentDateInTimezone().toLocaleString());
