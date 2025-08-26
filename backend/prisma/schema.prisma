@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma
+// backend/prisma/schema.prisma - CORRECTED VERSION WITH INVENTORY ENHANCEMENTS
 
 generator client {
   provider = "prisma-client-js"
@@ -49,7 +49,21 @@ model Inventory {
   id         String   @id @default(cuid())
   productId  String   @unique
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  // Basic stock levels (existing)
   quantity   Int      @default(0)
+  
+  // Enhanced fields for inventory management (new)
+  availableQuantity  Int?     @default(0)
+  reservedQuantity   Int?     @default(0)
+  incomingQuantity   Int?     @default(0)
+  reorderPoint       Int?     @default(20)
+  reorderQuantity    Int?     @default(100)
+  leadTimeDays       Int?     @default(7)
+  safetyStock        Int?     @default(10)
+  lastRestockDate    DateTime?
+  nextRestockDate    DateTime?
+  
   updatedAt  DateTime @updatedAt
   createdAt  DateTime @default(now())
 
@@ -108,310 +122,6 @@ model DailyMetric {
 }
 
 // --------- Optional (keep if useful) ----------
-
-model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  companyName String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("users")
-}
-
-model Prediction {
-  id               String   @id @default(cuid())
-  date             DateTime @db.Date
-  predictedRevenue Int
-  confidence       Float
-  modelType        String
-  modelVersion     String?
-  actualRevenue    Int?
-  createdAt        DateTime @default(now())
-
-  @@map("predictions")
-}
-
-// backend/prisma/schema.prisma - UPDATED WITH INVENTORY MANAGEMENT
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-// --------- Core entities ----------
-
-model Channel {
-  id           String        @id @default(cuid())
-  name         String
-  code         String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  // Relations
-  products        Product[]
-  orders          Order[]
-  dailyMetrics    DailyMetric[]
-  purchaseOrders  PurchaseOrder[]
-
-  @@map("channels")
-}
-
-model Product {
-  id         String    @id @default(cuid())
-  channelId  String
-  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelRef String?
-  sku        String    @unique
-  title      String
-  active     Boolean   @default(true)
-  priceCents Int?
-  currency   String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  // Relations
-  inventory           Inventory?
-  orderItems          OrderItem[]
-  inventoryMovements  InventoryMovement[]
-  stockAlerts         StockAlert[]
-  productSuppliers    ProductSupplier[]
-  purchaseOrderItems  PurchaseOrderItem[]
-
-  @@map("products")
-}
-
-model Inventory {
-  id         String   @id @default(cuid())
-  productId  String   @unique
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
-  // Stock levels
-  quantity           Int      @default(0)
-  availableQuantity  Int      @default(0)
-  reservedQuantity   Int      @default(0)
-  incomingQuantity   Int      @default(0)
-  
-  // Reorder parameters
-  reorderPoint       Int      @default(20)
-  reorderQuantity    Int      @default(100)
-  leadTimeDays       Int      @default(7)
-  safetyStock        Int      @default(10)
-  minOrderQuantity   Int      @default(1)
-  maxStockLevel      Int?
-  
-  // Dates
-  lastRestockDate    DateTime?
-  nextRestockDate    DateTime?
-  updatedAt          DateTime @updatedAt
-  createdAt          DateTime @default(now())
-  
-  // Notes
-  notes              String?
-  
-  // Relations
-  movements          InventoryMovement[]
-  alerts             StockAlert[]
-
-  @@map("inventory")
-}
-
-model InventoryMovement {
-  id            String    @id @default(cuid())
-  inventoryId   String
-  inventory     Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
-  movementType  String    // 'sale', 'restock', 'adjustment', 'return', 'reserved', 'unreserved'
-  quantity      Int       // positive for in, negative for out
-  referenceType String?   // 'order', 'purchase_order', 'manual'
-  referenceId   String?   // order_id or purchase_order_id
-  notes         String?
-  createdBy     String?
-  createdAt     DateTime  @default(now())
-
-  @@index([inventoryId])
-  @@index([productId])
-  @@index([createdAt])
-  @@map("inventory_movements")
-}
-
-model StockAlert {
-  id            String    @id @default(cuid())
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  inventoryId   String
-  inventory     Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-  
-  alertType     String    // 'low_stock', 'out_of_stock', 'reorder_point', 'overstock'
-  severity      String    @default("medium") // 'low', 'medium', 'high', 'critical'
-  thresholdValue Int?
-  currentValue  Int?
-  message       String?
-  isResolved    Boolean   @default(false)
-  resolvedAt    DateTime?
-  createdAt     DateTime  @default(now())
-
-  @@index([productId])
-  @@index([isResolved])
-  @@map("stock_alerts")
-}
-
-model Supplier {
-  id            String    @id @default(cuid())
-  name          String
-  code          String?   @unique
-  contactName   String?
-  email         String?
-  phone         String?
-  address       String?
-  website       String?
-  leadTimeDays  Int?      @default(7)
-  paymentTerms  String?
-  notes         String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  // Relations
-  productSuppliers  ProductSupplier[]
-  purchaseOrders    PurchaseOrder[]
-
-  @@map("suppliers")
-}
-
-model ProductSupplier {
-  id              String    @id @default(cuid())
-  productId       String
-  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  supplierId      String
-  supplier        Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  
-  supplierSku     String?
-  costCents       Int?
-  leadTimeDays    Int?
-  minOrderQuantity Int      @default(1)
-  isPreferred     Boolean   @default(false)
-  lastOrderDate   DateTime?
-  createdAt       DateTime  @default(now())
-
-  @@unique([productId, supplierId])
-  @@index([productId])
-  @@map("product_suppliers")
-}
-
-model PurchaseOrder {
-  id            String    @id @default(cuid())
-  orderNumber   String    @unique
-  supplierId    String?
-  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  channelId     String?
-  channel       Channel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  
-  status        String    @default("draft") // 'draft', 'sent', 'confirmed', 'partial', 'received', 'cancelled'
-  totalItems    Int?      @default(0)
-  totalQuantity Int?      @default(0)
-  
-  // Financials
-  subtotalCents Int?      @default(0)
-  taxCents      Int?      @default(0)
-  shippingCents Int?      @default(0)
-  totalCents    Int?      @default(0)
-  currency      String?   @default("USD")
-  
-  // Dates
-  orderDate     DateTime?
-  expectedDate  DateTime?
-  receivedDate  DateTime?
-  
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  // Relations
-  items         PurchaseOrderItem[]
-
-  @@index([status])
-  @@map("purchase_orders")
-}
-
-model PurchaseOrderItem {
-  id               String        @id @default(cuid())
-  purchaseOrderId  String
-  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId        String
-  product          Product       @relation(fields: [productId], references: [id])
-  
-  quantityOrdered  Int
-  quantityReceived Int?          @default(0)
-  unitCostCents    Int?
-  totalCostCents   Int?
-  expectedDate     DateTime?
-  receivedDate     DateTime?
-  notes            String?
-  createdAt        DateTime      @default(now())
-
-  @@index([purchaseOrderId])
-  @@map("purchase_order_items")
-}
-
-// --------- Existing models ----------
-
-model Order {
-  id            String    @id @default(cuid())
-  channelId     String
-  channel       Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelRef    String    @unique
-  number        String?
-  createdAt     DateTime
-  updatedAt     DateTime  @updatedAt
-  currency      String
-  subtotalCents Int
-  taxCents      Int
-  shippingCents Int
-  totalCents    Int
-  customerEmail String?
-
-  items         OrderItem[]
-
-  @@index([createdAt])
-  @@map("orders")
-}
-
-model OrderItem {
-  id         String   @id @default(cuid())
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId  String?
-  product    Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sku        String?
-  title      String
-  quantity   Int
-  priceCents Int
-  totalCents Int
-
-  @@map("order_items")
-}
-
-model DailyMetric {
-  id            String   @id @default(cuid())
-  date          DateTime @db.Date
-  channelId     String
-  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  revenueCents  Int
-  orders        Int
-  visitors      Int?
-  conversionPct Float?
-  aovCents      Int?
-
-  @@unique([date, channelId])
-  @@map("daily_metrics")
-}
 
 model User {
   id          String   @id @default(cuid())
