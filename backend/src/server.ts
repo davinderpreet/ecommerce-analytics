@@ -79,8 +79,8 @@ const DateUtils = {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     return {
-      start: new Date(today.getTime()), // 00:00:00
-      end: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1), // 23:59:59.999
+      start: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0), // 00:00:00.000
+      end: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999), // 23:59:59.999
       dateStr: DateUtils.formatDateKey(today)
     };
   },
@@ -90,8 +90,8 @@ const DateUtils = {
     const now = new Date();
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     return {
-      start: new Date(yesterday.getTime()), // 00:00:00
-      end: new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1), // 23:59:59.999
+      start: new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 0, 0, 0, 0), // 00:00:00.000
+      end: new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 23, 59, 59, 999), // 23:59:59.999
       dateStr: DateUtils.formatDateKey(yesterday)
     };
   }
@@ -264,6 +264,25 @@ app.get('/api/v1/analytics/today', async (req: Request, res: Response) => {
     const todayRange = DateUtils.getTodayRange();
     
     console.log('📅 Today range:', todayRange.start, 'to', todayRange.end);
+    console.log('📅 Today dateStr:', todayRange.dateStr);
+    
+    // First, check if we have ANY orders in the database
+    const totalOrdersCount = await prisma.order.count();
+    console.log('📅 Total orders in database:', totalOrdersCount);
+    
+    // Check orders from the last 7 days for debugging
+    const last7Days = DateUtils.getRelativeDateRange(7);
+    const recentOrders = await prisma.order.findMany({
+      where: { createdAt: { gte: last7Days.start, lte: last7Days.end } },
+      select: { createdAt: true, number: true, totalCents: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5
+    });
+    console.log('📅 Recent orders (last 7 days):', recentOrders.map(o => ({ 
+      number: o.number, 
+      createdAt: o.createdAt, 
+      total: DateUtils.toDollars(o.totalCents) 
+    })));
     
     let whereClause: any = {
       createdAt: { gte: todayRange.start, lte: todayRange.end }
