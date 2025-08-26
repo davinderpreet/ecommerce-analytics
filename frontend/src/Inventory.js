@@ -1,4 +1,4 @@
-// frontend/src/Inventory.js
+// frontend/src/Inventory.js - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { 
   Package, AlertTriangle, TrendingDown, ShoppingCart,
@@ -8,8 +8,7 @@ import {
   ArrowUp, ArrowDown, Settings, Calendar, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-const API_BASE = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
+import { api } from './lib/api'; // Import the api object
 
 const Inventory = () => {
   const navigate = useNavigate();
@@ -24,13 +23,13 @@ const Inventory = () => {
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
-  // Fetch inventory data
+  // Fetch inventory data using api object
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      const platformParam = selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : '';
-      const response = await fetch(`${API_BASE}/api/v1/inventory${platformParam}`);
-      const data = await response.json();
+      console.log('Fetching inventory for platform:', selectedPlatform);
+      const data = await api.inventory(selectedPlatform);
+      console.log('Inventory response:', data);
       
       if (data.success) {
         setInventory(data.items || []);
@@ -39,10 +38,25 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Failed to fetch inventory:', error);
-      // Use mock data for demonstration
+      // Use mock data for demonstration if API fails
       setMockData();
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Seed inventory with initial data
+  const seedInventory = async () => {
+    try {
+      console.log('Seeding inventory...');
+      const result = await api.inventorySeed();
+      console.log('Seed result:', result);
+      if (result.success) {
+        // Refresh inventory after seeding
+        await fetchInventory();
+      }
+    } catch (error) {
+      console.error('Failed to seed inventory:', error);
     }
   };
 
@@ -88,82 +102,28 @@ const Inventory = () => {
         salesVelocity: 2.1,
         unitCost: 1199.99,
         totalValue: 53999.55
-      },
-      {
-        id: '3',
-        sku: 'AIPODS-PRO2',
-        title: 'AirPods Pro 2',
-        channel: 'Shopify',
-        quantity: 8,
-        available: 8,
-        reserved: 0,
-        incoming: 30,
-        reorderPoint: 25,
-        reorderQuantity: 75,
-        leadTime: 5,
-        batchSize: 25,
-        stockoutRisk: 'critical',
-        daysUntilStockout: 1,
-        lastSold: '2024-12-28T09:15:00',
-        salesVelocity: 8.5,
-        unitCost: 249.99,
-        totalValue: 1999.92
-      },
-      {
-        id: '4',
-        sku: 'IPADPRO-11',
-        title: 'iPad Pro 11"',
-        channel: 'Shopify',
-        quantity: 32,
-        available: 30,
-        reserved: 2,
-        incoming: 20,
-        reorderPoint: 20,
-        reorderQuantity: 60,
-        leadTime: 7,
-        batchSize: 30,
-        stockoutRisk: 'medium',
-        daysUntilStockout: 10,
-        lastSold: '2024-12-27T16:45:00',
-        salesVelocity: 3.2,
-        unitCost: 799.99,
-        totalValue: 25599.68
       }
     ];
 
     const mockStats = {
-      totalProducts: 156,
-      totalValue: 487650.23,
-      lowStockItems: 12,
-      outOfStockItems: 3,
-      criticalItems: 5,
+      totalProducts: 2,
+      totalValue: 64799.43,
+      lowStockItems: 1,
+      outOfStockItems: 0,
+      criticalItems: 0,
       avgTurnoverDays: 14,
-      totalReserved: 89,
-      totalIncoming: 450,
+      totalReserved: 5,
+      totalIncoming: 50,
       stockAccuracy: 98.5
     };
 
     const mockAlerts = [
       {
         id: '1',
-        type: 'critical',
-        product: 'AirPods Pro 2',
-        message: 'Critical: Only 1 day of stock remaining',
-        time: '5 minutes ago'
-      },
-      {
-        id: '2',
         type: 'high',
         product: 'iPhone 15 Pro',
         message: 'Low stock: 3 days until stockout',
         time: '1 hour ago'
-      },
-      {
-        id: '3',
-        type: 'info',
-        product: 'MacBook Air M2',
-        message: 'Reorder point reached',
-        time: '3 hours ago'
       }
     ];
 
@@ -176,6 +136,7 @@ const Inventory = () => {
     fetchInventory();
   }, [selectedPlatform]);
 
+  // Rest of the component remains the same...
   // Filter and sort inventory
   const processedInventory = inventory
     .filter(item => {
@@ -264,6 +225,14 @@ const Inventory = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <button 
+                onClick={seedInventory}
+                className="bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2"
+                title="Seed inventory with random quantities"
+              >
+                <Plus className="w-5 h-5 text-white" />
+                <span className="text-white font-medium">Seed Data</span>
+              </button>
               <button className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2">
                 <Upload className="w-5 h-5 text-white" />
                 <span className="text-white font-medium">Import</span>
@@ -459,6 +428,12 @@ const Inventory = () => {
                     <td colSpan="7" className="text-center py-12">
                       <Package className="w-8 h-8 text-white/40 mx-auto" />
                       <p className="text-white/60 mt-4">No products found</p>
+                      <button
+                        onClick={seedInventory}
+                        className="mt-4 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 px-6 py-3 rounded-xl text-white font-medium transition-all"
+                      >
+                        Seed Sample Inventory
+                      </button>
                     </td>
                   </tr>
                 ) : (
