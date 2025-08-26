@@ -1,6 +1,8 @@
+// frontend/src/App.js - Updated with Inventory route
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './Dashboard';
+import Inventory from './Inventory'; // Add this import
 import './App.css';
 
 function HomePage() {
@@ -11,12 +13,20 @@ function HomePage() {
           E-commerce Analytics
         </h1>
         <p className="text-white/70 text-xl mb-8">AI-Powered Multi-Platform Dashboard</p>
-        <a 
-          href="/dashboard" 
-          className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg transition-all duration-300 hover:scale-105"
-        >
-          View Dashboard →
-        </a>
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <a 
+            href="/dashboard" 
+            className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg transition-all duration-300 hover:scale-105 inline-block"
+          >
+            View Dashboard →
+          </a>
+          <a 
+            href="/inventory" 
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg transition-all duration-300 hover:scale-105 inline-block"
+          >
+            Inventory Management →
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -29,6 +39,7 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/inventory" element={<Inventory />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
