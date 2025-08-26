@@ -1,4 +1,4 @@
-// backend/src/integrations/shopify.ts - FIXED PAGINATION VERSION (MOVED TO SRC)
+// backend/src/integrations/shopify.ts - COMPLETE FIXED VERSION
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -161,10 +161,10 @@ export async function syncShopifyOrders(days = 7) {
       daysDiff: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
     });
 
-    // FIXED: Enhanced GraphQL query with proper pagination
+    // FIXED: Simplified GraphQL query without conditional syntax
     const query = `
       query Orders($cursor: String, $since: DateTime) {
-        orders(first: 100, query: $since ? "created_at:>=$since" : null, after: $cursor, reverse: true) {
+        orders(first: 100, query: "created_at:>=$since", after: $cursor, reverse: true) {
           edges {
             cursor
             node {
@@ -478,6 +478,7 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
 
   const channel = await ensureShopifyChannel();
 
+  // FIXED: Simple query without conditional variables
   const query = `
     query Orders($cursor: String, $startDate: DateTime, $endDate: DateTime) {
       orders(first: 100, query: "created_at:>=$startDate AND created_at:<=$endDate", after: $cursor, reverse: true) {
@@ -511,7 +512,7 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
 
   console.log(`📅 Syncing orders from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
 
-  // FIXED: Proper pagination for date range sync too
+  // FIXED: Proper pagination for date range sync
   do {
     const data: any = await shopifyGraphQL(query, {
       cursor,
@@ -523,6 +524,8 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
     const pageInfo: any = data?.data?.orders?.pageInfo;
     hasNextPage = pageInfo?.hasNextPage || false;
     
+    console.log(`📦 Found ${edges.length} orders in this batch`);
+    
     for (const e of edges) {
       const o = e.node;
       const toCents = (s: string) => Math.round(parseFloat(s || "0") * 100);
@@ -531,6 +534,8 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
       const tax = toCents(o.totalTaxSet.shopMoney.amount);
       const ship = toCents(o.totalShippingPriceSet.shopMoney.amount);
       const total = toCents(o.totalPriceSet.shopMoney.amount);
+
+      console.log(`📦 Processing order: ${o.name} from ${o.createdAt} - $${total/100}`);
 
       // Upsert order
       const order = await prisma.order.upsert({
