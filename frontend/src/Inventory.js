@@ -10,6 +10,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api } from './lib/api'; // Import the api object
 
+const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/$/, "");
+
 const Inventory = () => {
   const navigate = useNavigate();
   const [inventory, setInventory] = useState([]);
@@ -21,42 +23,11 @@ const Inventory = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('stockout_risk');
   const [showReorderModal, setShowReorderModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [editQuantity, setEditQuantity] = useState(0);
 
-  // Fetch inventory data using api object
-  const fetchInventory = async () => {
-    setLoading(true);
-    try {
-      console.log('Fetching inventory for platform:', selectedPlatform);
-      const data = await api.inventory(selectedPlatform);
-      console.log('Inventory response:', data);
-      
-      if (data.success) {
-        setInventory(data.items || []);
-        setStats(data.stats || {});
-        setAlerts(data.alerts || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch inventory:', error);
-      // Use mock data for demonstration if API fails
-      setMockData();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Seed inventory with initial data
-  const seedInventory = async () => {
-    try {
-      console.log('Seeding inventory...');
-      const result = await api.inventorySeed();
-      console.log('Seed result:', result);
-      if (result.success) {
-        // Refresh inventory after seeding
-        await fetchInventory();
-      }
-    } catch (error) {
-      console.error('Failed to seed inventory:', error);
+ seed inventory:', error);
     }
   };
 
@@ -136,6 +107,11 @@ const Inventory = () => {
     fetchInventory();
   }, [selectedPlatform]);
 
+  useEffect(() => {
+    console.log('Current inventory state:', inventory);
+    console.log('Processed inventory:', processedInventory);
+  }, [inventory]);ory]);
+
   // Rest of the component remains the same...
   // Filter and sort inventory
   const processedInventory = inventory
@@ -187,6 +163,44 @@ const Inventory = () => {
     setShowReorderModal(true);
   };
 
+  const handleEditInventory = (product) => {
+    setSelectedProduct(product);
+    setEditQuantity(product.quantity);
+    setShowEditModal(true);
+  };
+
+  const saveInventoryUpdate = async () => {
+    if (!selectedProduct) return;
+    
+    try {
+      const result = await api.inventoryUpdate(selectedProduct.id, editQuantity);
+      if (result.success) {
+        // Refresh inventory
+        await fetchInventory();
+        setShowEditModal(false);
+      }
+    } catch (error) {
+      console.error('Failed to update inventory:', error);
+    }
+  };
+
+  const syncFromShopify = async () => {
+    try {
+      console.log('Syncing from Shopify...');
+      const res = await fetch(`${API_BASE}/api/v1/inventory/sync-shopify`, {
+        method: 'POST',
+        headers: { Accept: "application/json" }
+      });
+      const result = await res.json();
+      console.log('Shopify sync result:', result);
+      if (result.success) {
+        await fetchInventory();
+      }
+    } catch (error) {
+      console.error('Failed to sync from Shopify:', error);
+    }
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -225,6 +239,14 @@ const Inventory = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <button 
+                onClick={syncFromShopify}
+                className="bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2"
+                title="Sync inventory from Shopify"
+              >
+                <RefreshCw className="w-5 h-5 text-white" />
+                <span className="text-white font-medium">Sync Shopify</span>
+              </button>
               <button 
                 onClick={seedInventory}
                 className="bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2"
@@ -500,12 +522,17 @@ const Inventory = () => {
                           <p className="text-white/70">Reorder: {item.reorderPoint} units</p>
                           <p className="text-white/70">Quantity: {item.reorderQuantity}</p>
                           <p className="text-white/50 text-xs">Lead: {item.leadTime} days</p>
+                          {item.reorderDate && (
+                            <p className={`text-xs mt-1 ${item.shouldReorderNow ? 'text-red-400 font-bold' : 'text-yellow-400'}`}>
+                              Reorder {item.shouldReorderNow ? 'NOW' : `by ${new Date(item.reorderDate).toLocaleDateString()}`}
+                            </p>
+                          )}
                         </div>
                       </td>
                       
                       <td className="p-4">
                         <div className="flex items-center justify-end space-x-2">
-                          {item.quantity <= item.reorderPoint && (
+                          {(item.shouldReorderNow || item.quantity <= item.reorderPoint) && (
                             <button
                               onClick={() => handleReorder(item)}
                               className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-3 py-2 rounded-lg transition-all duration-300 flex items-center space-x-1"
@@ -514,7 +541,10 @@ const Inventory = () => {
                               <span className="text-white text-sm">Reorder</span>
                             </button>
                           )}
-                          <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
+                          <button 
+                            onClick={() => handleEditInventory(item)}
+                            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                          >
                             <Edit2 className="w-4 h-4 text-white/60" />
                           </button>
                           <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
@@ -529,6 +559,57 @@ const Inventory = () => {
             </table>
           </div>
         </div>
+
+        {/* Edit Inventory Modal */}
+        {showEditModal && selectedProduct && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-md w-full mx-4">
+              <h3 className="text-2xl font-bold text-white mb-4">Edit Inventory</h3>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-white/70 text-sm mb-2">Product</p>
+                  <p className="text-white font-medium">{selectedProduct.title}</p>
+                  <p className="text-white/50 text-sm">SKU: {selectedProduct.sku}</p>
+                </div>
+                
+                <div>
+                  <label className="text-white/70 text-sm block mb-2">Current Quantity</label>
+                  <input
+                    type="number"
+                    value={editQuantity}
+                    onChange={(e) => setEditQuantity(Number(e.target.value))}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+                  />
+                </div>
+                
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <p className="text-blue-400 text-sm font-medium mb-2">Inventory Analysis</p>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-white/70">Sales Velocity: {selectedProduct.salesVelocity} units/day</p>
+                    <p className="text-white/70">Current Stock Days: {Math.floor(editQuantity / (selectedProduct.salesVelocity || 1))}</p>
+                    <p className="text-white/70">Suggested Reorder: {selectedProduct.reorderQuantity} units</p>
+                    <p className="text-white/70">Lead Time: {selectedProduct.leadTime} days</p>
+                  </div>
+                </div>
+                
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveInventoryUpdate}
+                    className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-xl text-white font-medium transition-all"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Reorder Modal */}
         {showReorderModal && selectedProduct && (
