@@ -1,4 +1,4 @@
-// backend/src/integrations/shopify.ts - COMPLETE FIXED VERSION
+// backend/src/integrations/shopify.ts - COMPLETE FINAL FIXED VERSION
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -161,10 +161,10 @@ export async function syncShopifyOrders(days = 7) {
       daysDiff: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
     });
 
-    // FIXED: Simplified GraphQL query without conditional syntax
+    // FIXED: Corrected GraphQL query - removed invalid fields and fixed variable usage
     const query = `
-      query Orders($cursor: String, $since: DateTime) {
-        orders(first: 100, query: "created_at:>=$since", after: $cursor, reverse: true) {
+      query Orders($cursor: String) {
+        orders(first: 100, query: "created_at:>=${sinceISO}", after: $cursor, reverse: true) {
           edges {
             cursor
             node {
@@ -199,8 +199,6 @@ export async function syncShopifyOrders(days = 7) {
                   }
                 }
               }
-              fulfillmentStatus
-              financialStatus
               tags
             }
           }
@@ -225,8 +223,7 @@ export async function syncShopifyOrders(days = 7) {
       
       try {
         const data: any = await shopifyGraphQL<any>(query, { 
-          cursor, 
-          since: sinceISO
+          cursor
         });
         
         const edges = data?.data?.orders?.edges ?? [];
@@ -478,10 +475,14 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
 
   const channel = await ensureShopifyChannel();
 
-  // FIXED: Simple query without conditional variables
+  // Build the date query string directly
+  const startISO = startDate.toISOString();
+  const endISO = endDate.toISOString();
+  
+  // FIXED: Simple query with embedded date values
   const query = `
-    query Orders($cursor: String, $startDate: DateTime, $endDate: DateTime) {
-      orders(first: 100, query: "created_at:>=$startDate AND created_at:<=$endDate", after: $cursor, reverse: true) {
+    query Orders($cursor: String) {
+      orders(first: 100, query: "created_at:>=${startISO} AND created_at:<=${endISO}", after: $cursor, reverse: true) {
         edges {
           cursor
           node {
@@ -515,9 +516,7 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
   // FIXED: Proper pagination for date range sync
   do {
     const data: any = await shopifyGraphQL(query, {
-      cursor,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
+      cursor
     });
 
     const edges = data?.data?.orders?.edges ?? [];
