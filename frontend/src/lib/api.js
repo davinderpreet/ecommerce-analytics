@@ -9,10 +9,11 @@ if (!API_BASE) {
   console.warn("REACT_APP_API_BASE is NOT set. Set it in Vercel → Project → Environment Variables.");
 }
 
-async function http(method, path) {
+async function http(method, path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...options.headers },
+    ...options
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
@@ -47,4 +48,20 @@ export const api = {
   // Optional: trigger imports from the UI
   syncShopify: (days = 30) => http("POST", `/api/v1/sync/shopify?days=${days}`),
   syncBestBuy: (days = 30) => http("POST", `/api/v1/sync/bestbuy?days=${days}`),
+  
+  // Add inventory methods
+  inventory: (platform = 'all') => {
+    const suffix = platform !== 'all' ? `?platform=${platform}` : '';
+    return http("GET", `/api/v1/inventory${suffix}`);
+  },
+  
+  inventorySeed: () => http("POST", "/api/v1/inventory/seed"),
+  
+  inventoryUpdate: (productId, quantity) => 
+    http("POST", `/api/v1/inventory/${productId}/update`, {
+      headers: { 
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ quantity })
+    })
 };
