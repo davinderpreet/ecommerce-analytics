@@ -118,6 +118,33 @@ router.get('/', async (req, res) => {
         minBatchSize,
         60 // Target 60 days of stock
       );
+
+// Add to backend/src/routes/inventory.ts
+router.post('/:productId/settings', async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const settings = req.body;
+    
+    await prisma.product.update({
+      where: { id: productId },
+      data: {
+        leadTimeDays: settings.leadTimeDays,
+        moq: settings.moq,
+        batchSize: settings.batchSize,
+        safetyStockDays: settings.safetyStockDays,
+        supplierName: settings.supplierName,
+        supplierCountry: settings.supplierCountry,
+        shippingMethod: settings.shippingMethod
+      }
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
       
       // Calculate days until stockout
       const daysUntilStockout = salesVelocity > 0 
