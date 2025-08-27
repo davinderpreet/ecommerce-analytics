@@ -1,4 +1,4 @@
-// backend/src/routes/product-analytics.ts
+// backend/src/routes/product-analytics.ts - FIXED VERSION
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 
@@ -49,137 +49,30 @@ interface ProductPerformance {
   };
 }
 
-// Add to existing product-analytics.ts
-
-// Enhancement: Include return data in product performance
-router.get('/product-performance-enhanced', async (req, res) => {
-  try {
-    const { period = '90d' } = req.query;
-    const days = parseInt(period.toString().replace('d', ''));
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    
-    // Get existing performance data
-    const products = await prisma.product.findMany({
-      where: { active: true },
-      include: {
-        orderItems: {
-          include: { order: true },
-          where: {
-            order: { createdAt: { gte: startDate } }
-          }
-        },
-        inventory: true
-      }
-    });
-    
-    // Fetch return data for each product
-    const performanceData = await Promise.all(products.map(async (product) => {
-      // Get return metrics
-      const returnData = await prisma.$queryRaw`
-        SELECT 
-          COUNT(DISTINCT ri.return_id) as return_count,
-          SUM(ri.quantity_returned) as units_returned,
-          SUM(ri.total_value_cents) as return_value_cents,
-          SUM(CASE WHEN ri.reason_category = 'defective' THEN ri.quantity_returned ELSE 0 END) as defective_units,
-          STRING_AGG(DISTINCT ri.batch_number, ',') as problem_batches
-        FROM return_items ri
-        JOIN returns r ON ri.return_id = r.id
-        WHERE ri.product_id = ${product.id}
-          AND r.created_at >= ${startDate}
-          AND r.status IN ('approved', 'completed')
-      `;
-      
-      const salesData = calculateSalesMetrics(product.orderItems);
-      const returnMetrics = returnData[0] || {};
-      
-      // Calculate adjusted metrics
-      const grossRevenue = salesData.totalRevenue;
-      const returnValue = (returnMetrics.return_value_cents || 0) / 100;
-      const netRevenue = grossRevenue - returnValue;
-      const returnRate = salesData.totalUnits > 0 
-        ? ((returnMetrics.units_returned || 0) / salesData.totalUnits) * 100 
-        : 0;
-      
-      // Quality score (100 - defect rate)
-      const qualityScore = 100 - (returnMetrics.defective_units || 0) / Math.max(salesData.totalUnits, 1) * 100;
-      
-      // Adjust performance score based on returns
-      const baseScore = calculatePerformanceScore(salesData);
-      const adjustedScore = Math.max(0, baseScore - (returnRate * 2)); // Penalize for high return rate
-      
-      return {
-        ...existingProductData,
-        
-        // Return metrics
-        returnMetrics: {
-          returnCount: returnMetrics.return_count || 0,
-          unitsReturned: returnMetrics.units_returned || 0,
-          returnValue: returnValue,
-          returnRate: returnRate.toFixed(2),
-          defectiveUnits: returnMetrics.defective_units || 0,
-          qualityScore: qualityScore.toFixed(1),
-          problemBatches: returnMetrics.problem_batches?.split(',').filter(Boolean) || []
-        },
-        
-        // Adjusted financials
-        grossRevenue,
-        netRevenue,
-        returnImpact: returnValue,
-        
-        // Adjusted score
-        performanceScore: adjustedScore,
-        
-        // New recommendations based on returns
-        recommendations: generateReturnAwareRecommendations({
-          ...product,
-          returnRate,
-          qualityScore,
-          problemBatches: returnMetrics.problem_batches
-        })
-      };
-    }));
-    
-    res.json({
-      success: true,
-      products: performanceData
-    });
-    
-  } catch (error: any) {
-    console.error('Enhanced performance error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-function generateReturnAwareRecommendations(data: any): string[] {
-  const recommendations: string[] = [];
-  
-  // High return rate alerts
-  if (data.returnRate > 10) {
-    recommendations.push(`⚠️ High return rate (${data.returnRate}%) - investigate quality issues`);
-  }
-  
-  // Quality issues
-  if (data.qualityScore < 90) {
-    recommendations.push(`🔍 Quality score below 90% - consider supplier review`);
-  }
-  
-  // Batch problems
-  if (data.problemBatches && data.problemBatches.length > 0) {
-    recommendations.push(`📦 Problem batches identified: ${data.problemBatches.join(', ')} - quarantine remaining stock`);
-  }
-  
-  // Defective pattern
-  if (data.defectiveUnits > 5) {
-    recommendations.push(`🛠️ ${data.defectiveUnits} defective units - contact supplier for credit claim`);
-  }
-  
-  return recommendations;
+// Add the missing calculateSalesMetrics function
+interface SalesMetrics {
+  dailySales: Record<string, { units: number; revenue: number }>;
+  totalUnits: number;
+  totalRevenue: number;
 }
 
-
-
-
+function calculateSalesMetrics(orderItems: any[]): SalesMetrics {
+  return orderItems.reduce((acc, item) => {
+    const date = item.order.createdAt.toISOString().split('T')[0];
+    if (!acc.dailySales[date]) {
+      acc.dailySales[date] = { units: 0, revenue: 0 };
+    }
+    acc.dailySales[date].units += item.quantity;
+    acc.dailySales[date].revenue += item.totalCents / 100;
+    acc.totalUnits += item.quantity;
+    acc.totalRevenue += item.totalCents / 100;
+    return acc;
+  }, {
+    dailySales: {} as Record<string, { units: number; revenue: number }>,
+    totalUnits: 0,
+    totalRevenue: 0
+  });
+}
 
 // GET /api/v1/analytics/product-performance
 router.get('/product-performance', async (req, res) => {
@@ -211,22 +104,8 @@ router.get('/product-performance', async (req, res) => {
     const performanceData: ProductPerformance[] = [];
     
     for (const product of products) {
-      // Calculate sales metrics
-      const salesData = product.orderItems.reduce((acc, item) => {
-        const date = item.order.createdAt.toISOString().split('T')[0];
-        if (!acc.dailySales[date]) {
-          acc.dailySales[date] = { units: 0, revenue: 0 };
-        }
-        acc.dailySales[date].units += item.quantity;
-        acc.dailySales[date].revenue += item.totalCents / 100;
-        acc.totalUnits += item.quantity;
-        acc.totalRevenue += item.totalCents / 100;
-        return acc;
-      }, {
-        dailySales: {} as Record<string, { units: number; revenue: number }>,
-        totalUnits: 0,
-        totalRevenue: 0
-      });
+      // Calculate sales metrics using the fixed function
+      const salesData = calculateSalesMetrics(product.orderItems);
       
       // Calculate performance metrics
       const daysInPeriod = days;
@@ -342,7 +221,9 @@ router.get('/product-performance', async (req, res) => {
       questionMarks: performanceData.filter(p => p.category === 'Question Mark').length,
       dogs: performanceData.filter(p => p.category === 'Dog').length,
       
-      averagePerformanceScore: performanceData.reduce((sum, p) => sum + p.performanceScore, 0) / performanceData.length,
+      averagePerformanceScore: performanceData.length > 0 
+        ? performanceData.reduce((sum, p) => sum + p.performanceScore, 0) / performanceData.length
+        : 0,
       totalRevenue: performanceData.reduce((sum, p) => sum + p.totalRevenue, 0),
       
       pricingOpportunities: {
@@ -380,7 +261,7 @@ function calculateSalesTrend(dailySales: Record<string, { units: number; revenue
   const recentAvg = recent.reduce((sum, date) => sum + dailySales[date].units, 0) / 7;
   const previousAvg = previous.reduce((sum, date) => sum + (dailySales[date]?.units || 0), 0) / 7;
   
-  const change = (recentAvg - previousAvg) / (previousAvg || 1);
+  const change = previousAvg > 0 ? (recentAvg - previousAvg) / previousAvg : 0;
   
   if (change > 0.2) return 'growing';
   if (change < -0.2) return 'declining';
