@@ -36,7 +36,7 @@ router.post('/', async (req, res) => {
       return sum + (item.unitPriceCents * item.quantityReturned);
     }, 0);
     
-    // Create return record
+    // Create return record with items
     const returnRecord = await prisma.return.create({
       data: {
         returnNumber: generateRMANumber(),
@@ -46,9 +46,7 @@ router.post('/', async (req, res) => {
         status: 'pending',
         totalReturnValueCents: totalReturnValue,
         notes,
-        createdBy: req.user?.id || 'system',
-        
-        // Create return items
+        createdBy: 'system',
         items: {
           create: items.map((item: any) => ({
             orderItemId: item.orderItemId,
@@ -73,15 +71,12 @@ router.post('/', async (req, res) => {
       }
     });
     
-    // Update inventory if auto-restock
+    // Update inventory for restockable items
     for (const item of items) {
-      if (item.quantityRestockable > 0 && item.condition === 'new') {
-        await updateInventoryForReturn(item.productId, item.quantityRestockable, 'restock');
+      if (item.quantityRestockable > 0 && item.condition === 'new' && item.productId) {
+        await updateInventoryForReturn(item.productId, item.quantityRestockable);
       }
     }
-    
-    // Log inventory movement
-    await createInventoryMovement(returnRecord);
     
     res.json({
       success: true,
@@ -208,55 +203,86 @@ router.get('/by-product/:productId', async (req, res) => {
 // GET /api/v1/returns/metrics - Return analytics
 router.get('/metrics', async (req, res) => {
   try {
-    const { startDate, endDate, groupBy = 'day' } = req.query;
+    const { startDate, endDate } = req.query;
     
     const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const end = endDate ? new Date(endDate as string) : new Date();
     
-    // Get return metrics
-    const metrics = await prisma.$queryRaw`
-      SELECT 
-        DATE(r.created_at) as date,
-        COUNT(DISTINCT r.id) as return_count,
-        COUNT(DISTINCT ri.id) as return_item_count,
-        SUM(ri.quantity_returned) as total_units_returned,
-        SUM(ri.total_value_cents) / 100.0 as total_return_value,
-        
-        -- Reason breakdown
-        SUM(CASE WHEN ri.reason_category = 'defective' THEN ri.quantity_returned ELSE 0 END) as defective_units,
-        SUM(CASE WHEN ri.reason_category = 'damaged_in_shipping' THEN ri.quantity_returned ELSE 0 END) as shipping_damaged_units,
-        SUM(CASE WHEN ri.reason_category = 'not_as_described' THEN ri.quantity_returned ELSE 0 END) as not_as_described_units,
-        SUM(CASE WHEN ri.reason_category = 'wrong_item' THEN ri.quantity_returned ELSE 0 END) as wrong_item_units,
-        SUM(CASE WHEN ri.reason_category = 'unwanted' THEN ri.quantity_returned ELSE 0 END) as unwanted_units,
-        
-        -- Financial impact
-        SUM(r.refund_amount_cents) / 100.0 as total_refunded,
-        SUM(r.restocking_fee_cents) / 100.0 as total_restocking_fees,
-        SUM(r.return_shipping_cost_cents) / 100.0 as total_return_shipping_costs
-        
-      FROM returns r
-      LEFT JOIN return_items ri ON r.id = ri.return_id
-      WHERE r.created_at BETWEEN ${start} AND ${end}
-      GROUP BY DATE(r.created_at)
-      ORDER BY date DESC
-    `;
+    // Get aggregated metrics
+    const returns = await prisma.return.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lte: end
+        }
+      },
+      include: {
+        items: true
+      }
+    });
+    
+    // Process metrics by day
+    const dailyMetrics = returns.reduce((acc: any, ret) => {
+      const date = ret.createdAt.toISOString().split('T')[0];
+      if (!acc[date]) {
+        acc[date] = {
+          date,
+          return_count: 0,
+          total_units_returned: 0,
+          total_return_value: 0,
+          defective_units: 0,
+          damaged_units: 0
+        };
+      }
+      
+      acc[date].return_count++;
+      ret.items.forEach(item => {
+        acc[date].total_units_returned += item.quantityReturned;
+        acc[date].total_return_value += item.totalValueCents / 100;
+        if (item.reasonCategory === 'defective') {
+          acc[date].defective_units += item.quantityReturned;
+        }
+        if (item.reasonCategory === 'damaged_in_shipping') {
+          acc[date].damaged_units += item.quantityReturned;
+        }
+      });
+      
+      return acc;
+    }, {});
     
     // Get top returned products
-    const topReturned = await prisma.$queryRaw`
-      SELECT 
-        ri.sku,
-        ri.product_title,
-        COUNT(DISTINCT ri.return_id) as return_count,
-        SUM(ri.quantity_returned) as total_units_returned,
-        SUM(ri.total_value_cents) / 100.0 as total_return_value,
-        ri.reason_category as top_reason
-      FROM return_items ri
-      JOIN returns r ON ri.return_id = r.id
-      WHERE r.created_at BETWEEN ${start} AND ${end}
-      GROUP BY ri.sku, ri.product_title, ri.reason_category
-      ORDER BY total_units_returned DESC
-      LIMIT 10
-    `;
+    const productReturns = await prisma.returnItem.groupBy({
+      by: ['sku', 'productTitle'],
+      where: {
+        return: {
+          createdAt: {
+            gte: start,
+            lte: end
+          }
+        }
+      },
+      _count: {
+        id: true
+      },
+      _sum: {
+        quantityReturned: true,
+        totalValueCents: true
+      },
+      orderBy: {
+        _sum: {
+          quantityReturned: 'desc'
+        }
+      },
+      take: 10
+    });
+    
+    const topReturnedProducts = productReturns.map(p => ({
+      sku: p.sku,
+      product_title: p.productTitle,
+      return_count: p._count.id,
+      total_units_returned: p._sum.quantityReturned || 0,
+      total_return_value: (p._sum.totalValueCents || 0) / 100
+    }));
     
     res.json({
       success: true,
@@ -264,8 +290,8 @@ router.get('/metrics', async (req, res) => {
         start: start.toISOString(),
         end: end.toISOString()
       },
-      dailyMetrics: metrics,
-      topReturnedProducts: topReturned
+      dailyMetrics: Object.values(dailyMetrics),
+      topReturnedProducts
     });
     
   } catch (error: any) {
@@ -285,16 +311,13 @@ router.put('/:id/approve', async (req, res) => {
       data: {
         status: 'approved',
         approvedAt: new Date(),
-        approvedBy: req.user?.id || 'system',
-        refundAmountCents: refundAmount * 100,
-        restockingFeeCents: restockingFee * 100,
+        approvedBy: 'system',
+        refundAmountCents: Math.round((refundAmount || 0) * 100),
+        restockingFeeCents: Math.round((restockingFee || 0) * 100),
         notes: approvalNotes
       },
       include: { items: true }
     });
-    
-    // Process refund (integrate with payment system)
-    await processRefund(returnRecord);
     
     res.json({
       success: true,
@@ -307,8 +330,32 @@ router.put('/:id/approve', async (req, res) => {
   }
 });
 
-// Helper functions
-async function updateInventoryForReturn(productId: string, quantity: number, type: string) {
+// PUT /api/v1/returns/:id/complete - Complete return
+router.put('/:id/complete', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const returnRecord = await prisma.return.update({
+      where: { id },
+      data: {
+        status: 'completed',
+        completedAt: new Date()
+      }
+    });
+    
+    res.json({
+      success: true,
+      return: returnRecord
+    });
+    
+  } catch (error: any) {
+    console.error('Complete return error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to update inventory
+async function updateInventoryForReturn(productId: string, quantity: number) {
   const inventory = await prisma.inventory.findUnique({
     where: { productId }
   });
@@ -321,30 +368,9 @@ async function updateInventoryForReturn(productId: string, quantity: number, typ
         updatedAt: new Date()
       }
     });
+    
+    console.log(`Updated inventory for product ${productId}: +${quantity} units`);
   }
-}
-
-async function createInventoryMovement(returnRecord: any) {
-  for (const item of returnRecord.items) {
-    await prisma.inventoryMovement.create({
-      data: {
-        inventoryId: item.productId, // You might need to look this up
-        productId: item.productId,
-        movementType: 'RETURN',
-        quantity: item.quantityReturned,
-        referenceType: 'RETURN',
-        referenceId: returnRecord.id,
-        notes: `Return ${returnRecord.returnNumber}: ${item.reasonCategory}`,
-        createdBy: 'system'
-      }
-    });
-  }
-}
-
-async function processRefund(returnRecord: any) {
-  // Integrate with payment gateway
-  // This is a placeholder for actual refund processing
-  console.log(`Processing refund of $${returnRecord.refundAmountCents / 100} for return ${returnRecord.returnNumber}`);
 }
 
 export default router;
