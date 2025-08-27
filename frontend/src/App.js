@@ -41,6 +41,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/inventory" element={<Inventory />} />
+          <Route path="/performance" element={<ProductPerformance />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
