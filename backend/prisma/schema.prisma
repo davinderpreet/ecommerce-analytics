@@ -40,6 +40,13 @@ model Product {
   updatedAt  DateTime  @updatedAt
 
   inventory  Inventory?
+  leadTimeDays    Int?      @default(30)
+  moq             Int?      @default(100)
+  batchSize       Int?      @default(50)
+  safetyStockDays Int?      @default(14)
+  supplierName    String?
+  supplierCountry String?   @default("China")
+  shippingMethod  String?   @default("Sea")
   orderItems OrderItem[]
 
   @@map("products")
@@ -69,14 +76,7 @@ model Order {
   taxCents      Int
   shippingCents Int
   totalCents    Int
-  leadTimeDays  Int     @default(30)
-  moq           Int     @default(100)
-  batchSize     Int      @default(50)
-  safetyStockDays Int      @default(14)
-  supplierName    String
-  supplierCountry String   @default("China")
-  shippingMethod  String   @default("Sea")
-  customerEmail String?
+   customerEmail String?
 
   items         OrderItem[]
 
