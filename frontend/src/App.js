@@ -2,7 +2,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './Dashboard';
-import Inventory from './Inventory'; // Add this import
+import ProductPerformance from './ProductPerformance';
+import Inventory from './Inventory';// Add this import
 import './App.css';
 
 function HomePage() {
