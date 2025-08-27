@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma - Updated with all inventory fields
+// backend/prisma/schema.prisma - Complete with Returns Module
 
 generator client {
   provider = "prisma-client-js"
@@ -22,6 +22,7 @@ model Channel {
   products     Product[]
   orders       Order[]
   dailyMetrics DailyMetric[]
+  returns      Return[]      // ✓ Already added
 
   @@map("channels")
 }
@@ -49,8 +50,9 @@ model Product {
   shippingMethod  String?   @default("Sea")
 
   // Relations
-  inventory  Inventory?
-  orderItems OrderItem[]
+  inventory   Inventory?
+  orderItems  OrderItem[]
+  returnItems ReturnItem[]  // ✓ Already added
 
   @@map("products")
 }
@@ -82,6 +84,7 @@ model Order {
   customerEmail String?
 
   items         OrderItem[]
+  returns       Return[]     // ← ADD THIS LINE (was missing)
 
   @@index([createdAt])
   @@map("orders")
@@ -98,6 +101,8 @@ model OrderItem {
   quantity   Int
   priceCents Int
   totalCents Int
+  
+  returnItems ReturnItem[]  // ← ADD THIS LINE (was missing)
 
   @@map("order_items")
 }
@@ -139,7 +144,8 @@ model Prediction {
 
   @@map("predictions")
 }
-// Add these to your existing schema.prisma file
+
+// --------- Returns Management Module ----------
 
 model Return {
   id                      String    @id @default(cuid())
