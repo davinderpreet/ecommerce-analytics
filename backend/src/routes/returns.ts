@@ -1,5 +1,6 @@
+// backend/src/routes/returns.ts - FIXED VERSION
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -28,7 +29,8 @@ router.post('/', async (req, res) => {
     });
     
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      res.status(404).json({ error: 'Order not found' });
+      return; // Add explicit return to fix TS7030
     }
     
     // Calculate total return value
@@ -102,23 +104,37 @@ router.get('/', async (req, res) => {
       limit = 50
     } = req.query;
     
-    const where: any = {};
+    // Build the where clause with proper Prisma typing
+    const where: Prisma.ReturnWhereInput = {};
     
-    if (status) where.status = status;
+    if (status && typeof status === 'string') {
+      where.status = status;
+    }
+    
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate as string);
-      if (endDate) where.createdAt.lte = new Date(endDate as string);
+      if (startDate && typeof startDate === 'string') {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        where.createdAt.lte = new Date(endDate);
+      }
+    }
+    
+    // Build the items where clause with proper typing
+    const itemsWhere: Prisma.ReturnItemWhereInput = {};
+    if (sku && typeof sku === 'string') {
+      itemsWhere.sku = sku;
+    }
+    if (reasonCategory && typeof reasonCategory === 'string') {
+      itemsWhere.reasonCategory = reasonCategory;
     }
     
     const returns = await prisma.return.findMany({
       where,
       include: {
         items: {
-          where: {
-            ...(sku && { sku }),
-            ...(reasonCategory && { reasonCategory })
-          }
+          where: itemsWhere
         },
         order: {
           include: { channel: true }
@@ -205,8 +221,12 @@ router.get('/metrics', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
-    const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const end = endDate ? new Date(endDate as string) : new Date();
+    const start = startDate && typeof startDate === 'string' 
+      ? new Date(startDate) 
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const end = endDate && typeof endDate === 'string' 
+      ? new Date(endDate) 
+      : new Date();
     
     // Get aggregated metrics
     const returns = await prisma.return.findMany({
