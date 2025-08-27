@@ -139,3 +139,119 @@ model Prediction {
 
   @@map("predictions")
 }
+// Add these to your existing schema.prisma file
+
+model Return {
+  id                      String    @id @default(cuid())
+  returnNumber            String    @unique
+  orderId                 String
+  order                   Order     @relation(fields: [orderId], references: [id])
+  channelId               String
+  channel                 Channel   @relation(fields: [channelId], references: [id])
+  customerEmail           String?
+  status                  String    @default("pending")
+  totalReturnValueCents   Int       @default(0)
+  refundAmountCents       Int?
+  restockingFeeCents      Int       @default(0)
+  returnShippingCostCents Int       @default(0)
+  createdAt               DateTime  @default(now())
+  approvedAt              DateTime?
+  completedAt             DateTime?
+  createdBy               String?
+  approvedBy              String?
+  notes                   String?
+  
+  items                   ReturnItem[]
+  
+  @@index([status])
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("returns")
+}
+
+model ReturnItem {
+  id                String    @id @default(cuid())
+  returnId          String
+  return            Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderItemId       String?
+  orderItem         OrderItem? @relation(fields: [orderItemId], references: [id])
+  productId         String?
+  product           Product?  @relation(fields: [productId], references: [id])
+  sku               String
+  productTitle      String
+  quantityReturned  Int
+  quantityRestockable Int     @default(0)
+  quantityDamaged   Int       @default(0)
+  unitPriceCents    Int
+  totalValueCents   Int
+  reasonCategory    String
+  reasonDetail      String?
+  batchNumber       String?
+  manufactureDate   DateTime?
+  condition         String?
+  inspectionNotes   String?
+  inspectedBy       String?
+  inspectedAt       DateTime?
+  resolution        String?
+  resolutionNotes   String?
+  resolvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  
+  @@index([sku])
+  @@index([batchNumber])
+  @@index([reasonCategory])
+  @@map("return_items")
+}
+
+model ReturnReason {
+  id                String   @id @default(cuid())
+  category          String
+  code              String   @unique
+  description       String
+  requiresInspection Boolean @default(false)
+  autoApprove       Boolean @default(false)
+  isQualityIssue    Boolean @default(false)
+  isSupplierFault   Boolean @default(false)
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  
+  @@map("return_reasons")
+}
+
+// Update your existing Order model to add the relation
+model Order {
+  // ... existing fields ...
+  
+  returns  Return[]
+  
+  // ... rest of existing model
+}
+
+// Update your existing OrderItem model to add the relation
+model OrderItem {
+  // ... existing fields ...
+  
+  returnItems  ReturnItem[]
+  
+  // ... rest of existing model
+}
+
+// Update your existing Product model to add the relation
+model Product {
+  // ... existing fields ...
+  
+  returnItems  ReturnItem[]
+  
+  // ... rest of existing model
+}
+
+// Update your existing Channel model to add the relation
+model Channel {
+  // ... existing fields ...
+  
+  returns  Return[]
+  
+  // ... rest of existing model
+}
+
