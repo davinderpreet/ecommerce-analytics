@@ -7,6 +7,7 @@ import schedulerRoutes from './routes/scheduler';
 import inventoryRoutes from './routes/inventory';
 import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
+import productAnalyticsRoutes from './routes/product-analytics';
 import { syncShopifyOrders } from './integrations/shopify';
 
 dotenv.config();
@@ -22,6 +23,7 @@ app.use(express.json());
 // Routes
 app.use('/api/v1/scheduler', schedulerRoutes);
 app.use('/api/v1/inventory', inventoryRoutes);
+app.use('/api/v1/analytics', productAnalyticsRoutes);
 
 // Timezone configuration
 const USER_TIMEZONE = process.env.TZ || 'America/Toronto';
