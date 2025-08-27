@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma - JUST REMOVE THE DUPLICATE (Keep first half only)
+// backend/prisma/schema.prisma - Updated with all inventory fields
 
 generator client {
   provider = "prisma-client-js"
@@ -39,7 +39,7 @@ model Product {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  inventory  Inventory?
+  // Inventory management fields
   leadTimeDays    Int?      @default(30)
   moq             Int?      @default(100)
   batchSize       Int?      @default(50)
@@ -47,6 +47,9 @@ model Product {
   supplierName    String?
   supplierCountry String?   @default("China")
   shippingMethod  String?   @default("Sea")
+
+  // Relations
+  inventory  Inventory?
   orderItems OrderItem[]
 
   @@map("products")
@@ -76,7 +79,7 @@ model Order {
   taxCents      Int
   shippingCents Int
   totalCents    Int
-   customerEmail String?
+  customerEmail String?
 
   items         OrderItem[]
 
@@ -113,8 +116,6 @@ model DailyMetric {
   @@unique([date, channelId])
   @@map("daily_metrics")
 }
-
-// --------- Optional (keep if useful) ----------
 
 model User {
   id          String   @id @default(cuid())
