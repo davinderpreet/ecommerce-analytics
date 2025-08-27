@@ -27,6 +27,12 @@ function HomePage() {
           >
             Inventory Management →
           </a>
+<a 
+  href="/performance" 
+  className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg transition-all duration-300 hover:scale-105 inline-block"
+>
+  Performance Matrix →
+</a>              
         </div>
       </div>
     </div>
