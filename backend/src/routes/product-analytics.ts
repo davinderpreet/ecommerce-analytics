@@ -49,6 +49,138 @@ interface ProductPerformance {
   };
 }
 
+// Add to existing product-analytics.ts
+
+// Enhancement: Include return data in product performance
+router.get('/product-performance-enhanced', async (req, res) => {
+  try {
+    const { period = '90d' } = req.query;
+    const days = parseInt(period.toString().replace('d', ''));
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    // Get existing performance data
+    const products = await prisma.product.findMany({
+      where: { active: true },
+      include: {
+        orderItems: {
+          include: { order: true },
+          where: {
+            order: { createdAt: { gte: startDate } }
+          }
+        },
+        inventory: true
+      }
+    });
+    
+    // Fetch return data for each product
+    const performanceData = await Promise.all(products.map(async (product) => {
+      // Get return metrics
+      const returnData = await prisma.$queryRaw`
+        SELECT 
+          COUNT(DISTINCT ri.return_id) as return_count,
+          SUM(ri.quantity_returned) as units_returned,
+          SUM(ri.total_value_cents) as return_value_cents,
+          SUM(CASE WHEN ri.reason_category = 'defective' THEN ri.quantity_returned ELSE 0 END) as defective_units,
+          STRING_AGG(DISTINCT ri.batch_number, ',') as problem_batches
+        FROM return_items ri
+        JOIN returns r ON ri.return_id = r.id
+        WHERE ri.product_id = ${product.id}
+          AND r.created_at >= ${startDate}
+          AND r.status IN ('approved', 'completed')
+      `;
+      
+      const salesData = calculateSalesMetrics(product.orderItems);
+      const returnMetrics = returnData[0] || {};
+      
+      // Calculate adjusted metrics
+      const grossRevenue = salesData.totalRevenue;
+      const returnValue = (returnMetrics.return_value_cents || 0) / 100;
+      const netRevenue = grossRevenue - returnValue;
+      const returnRate = salesData.totalUnits > 0 
+        ? ((returnMetrics.units_returned || 0) / salesData.totalUnits) * 100 
+        : 0;
+      
+      // Quality score (100 - defect rate)
+      const qualityScore = 100 - (returnMetrics.defective_units || 0) / Math.max(salesData.totalUnits, 1) * 100;
+      
+      // Adjust performance score based on returns
+      const baseScore = calculatePerformanceScore(salesData);
+      const adjustedScore = Math.max(0, baseScore - (returnRate * 2)); // Penalize for high return rate
+      
+      return {
+        ...existingProductData,
+        
+        // Return metrics
+        returnMetrics: {
+          returnCount: returnMetrics.return_count || 0,
+          unitsReturned: returnMetrics.units_returned || 0,
+          returnValue: returnValue,
+          returnRate: returnRate.toFixed(2),
+          defectiveUnits: returnMetrics.defective_units || 0,
+          qualityScore: qualityScore.toFixed(1),
+          problemBatches: returnMetrics.problem_batches?.split(',').filter(Boolean) || []
+        },
+        
+        // Adjusted financials
+        grossRevenue,
+        netRevenue,
+        returnImpact: returnValue,
+        
+        // Adjusted score
+        performanceScore: adjustedScore,
+        
+        // New recommendations based on returns
+        recommendations: generateReturnAwareRecommendations({
+          ...product,
+          returnRate,
+          qualityScore,
+          problemBatches: returnMetrics.problem_batches
+        })
+      };
+    }));
+    
+    res.json({
+      success: true,
+      products: performanceData
+    });
+    
+  } catch (error: any) {
+    console.error('Enhanced performance error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+function generateReturnAwareRecommendations(data: any): string[] {
+  const recommendations: string[] = [];
+  
+  // High return rate alerts
+  if (data.returnRate > 10) {
+    recommendations.push(`⚠️ High return rate (${data.returnRate}%) - investigate quality issues`);
+  }
+  
+  // Quality issues
+  if (data.qualityScore < 90) {
+    recommendations.push(`🔍 Quality score below 90% - consider supplier review`);
+  }
+  
+  // Batch problems
+  if (data.problemBatches && data.problemBatches.length > 0) {
+    recommendations.push(`📦 Problem batches identified: ${data.problemBatches.join(', ')} - quarantine remaining stock`);
+  }
+  
+  // Defective pattern
+  if (data.defectiveUnits > 5) {
+    recommendations.push(`🛠️ ${data.defectiveUnits} defective units - contact supplier for credit claim`);
+  }
+  
+  return recommendations;
+}
+
+
+
+
+
 // GET /api/v1/analytics/product-performance
 router.get('/product-performance', async (req, res) => {
   try {
