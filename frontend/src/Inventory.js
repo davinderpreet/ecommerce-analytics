@@ -1,19 +1,281 @@
-// frontend/src/Inventory.js - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { 
   Package, AlertTriangle, TrendingDown, ShoppingCart,
   RefreshCw, Download, Upload, Search, Filter, 
   Plus, Edit2, Bell, Clock, Truck, ChevronRight,
   BarChart2, AlertCircle, CheckCircle, XCircle,
-  ArrowUp, ArrowDown, Settings, Calendar, Info
+  ArrowUp, ArrowDown, Settings, Calendar, Info,
+  Save, X
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { api } from './lib/api'; // Import the api object
 
-const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/$/, "");
+// Configuration
+const API_BASE = (process.env.REACT_APP_API_BASE || "http://localhost:8080").replace(/\/$/, "");
 
+// Settings Modal Component
+const SettingsModal = ({ show, onClose, settings, onSave }) => {
+  const [localSettings, setLocalSettings] = useState(settings);
+
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
+
+  const handleSave = () => {
+    onSave(localSettings);
+    onClose();
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-2xl font-bold text-white">Inventory Settings</h3>
+          <button
+            onClick={onClose}
+            className="text-white/60 hover:text-white transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Reorder Settings */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4">Reorder Configuration</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Default Lead Time (days)</label>
+                <input
+                  type="number"
+                  value={localSettings.defaultLeadTime}
+                  onChange={(e) => setLocalSettings({...localSettings, defaultLeadTime: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Safety Stock Days</label>
+                <input
+                  type="number"
+                  value={localSettings.safetyStockDays}
+                  onChange={(e) => setLocalSettings({...localSettings, safetyStockDays: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Min Batch Size</label>
+                <input
+                  type="number"
+                  value={localSettings.minBatchSize}
+                  onChange={(e) => setLocalSettings({...localSettings, minBatchSize: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Target Stock Days</label>
+                <input
+                  type="number"
+                  value={localSettings.targetStockDays}
+                  onChange={(e) => setLocalSettings({...localSettings, targetStockDays: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Alert Thresholds */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4">Alert Thresholds</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Critical Stock Level</label>
+                <input
+                  type="number"
+                  value={localSettings.criticalStockLevel}
+                  onChange={(e) => setLocalSettings({...localSettings, criticalStockLevel: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Low Stock Level</label>
+                <input
+                  type="number"
+                  value={localSettings.lowStockLevel}
+                  onChange={(e) => setLocalSettings({...localSettings, lowStockLevel: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Sync Settings */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4">Sync Configuration</h4>
+            <div className="space-y-3">
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={localSettings.autoSync}
+                  onChange={(e) => setLocalSettings({...localSettings, autoSync: e.target.checked})}
+                  className="w-5 h-5 bg-white/10 border border-white/20 rounded"
+                />
+                <span className="text-white/80">Enable Auto-Sync</span>
+              </label>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Sync Interval (minutes)</label>
+                <select
+                  value={localSettings.syncInterval}
+                  onChange={(e) => setLocalSettings({...localSettings, syncInterval: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                >
+                  <option value={5}>Every 5 minutes</option>
+                  <option value={15}>Every 15 minutes</option>
+                  <option value={30}>Every 30 minutes</option>
+                  <option value={60}>Every hour</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Display Settings */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4">Display Options</h4>
+            <div className="space-y-3">
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={localSettings.showAlerts}
+                  onChange={(e) => setLocalSettings({...localSettings, showAlerts: e.target.checked})}
+                  className="w-5 h-5 bg-white/10 border border-white/20 rounded"
+                />
+                <span className="text-white/80">Show Stock Alerts</span>
+              </label>
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={localSettings.showMetrics}
+                  onChange={(e) => setLocalSettings({...localSettings, showMetrics: e.target.checked})}
+                  className="w-5 h-5 bg-white/10 border border-white/20 rounded"
+                />
+                <span className="text-white/80">Show Metrics Dashboard</span>
+              </label>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Default View</label>
+                <select
+                  value={localSettings.defaultView}
+                  onChange={(e) => setLocalSettings({...localSettings, defaultView: e.target.value})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                >
+                  <option value="table">Table View</option>
+                  <option value="cards">Card View</option>
+                  <option value="list">List View</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex space-x-3 mt-8">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium transition-all flex items-center justify-center space-x-2"
+          >
+            <Save className="w-5 h-5" />
+            <span>Save Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Reorder Modal Component
+const ReorderModal = ({ show, onClose, product, onConfirm }) => {
+  const [quantity, setQuantity] = useState(product?.reorderQuantity || 100);
+  const [expectedDate, setExpectedDate] = useState('');
+
+  useEffect(() => {
+    if (product) {
+      setQuantity(product.reorderQuantity);
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + (product.leadTime || 7));
+      setExpectedDate(futureDate.toISOString().split('T')[0]);
+    }
+  }, [product]);
+
+  if (!show || !product) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-md w-full mx-4">
+        <h3 className="text-2xl font-bold text-white mb-4">Create Purchase Order</h3>
+        <div className="space-y-4">
+          <div>
+            <p className="text-white/70 text-sm mb-2">Product</p>
+            <p className="text-white font-medium">{product.title}</p>
+            <p className="text-white/50 text-sm">SKU: {product.sku}</p>
+          </div>
+          
+          <div>
+            <label className="text-white/70 text-sm block mb-2">Order Quantity</label>
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(parseInt(e.target.value))}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            />
+          </div>
+          
+          <div>
+            <label className="text-white/70 text-sm block mb-2">Expected Delivery</label>
+            <input
+              type="date"
+              value={expectedDate}
+              onChange={(e) => setExpectedDate(e.target.value)}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            />
+          </div>
+          
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+            <p className="text-blue-400 text-sm font-medium mb-2">Order Summary</p>
+            <div className="space-y-1 text-sm">
+              <p className="text-white/70">Current Stock: {product.quantity} units</p>
+              <p className="text-white/70">Lead Time: {product.leadTime} days</p>
+              <p className="text-white/70">Unit Cost: ${product.unitCost?.toFixed(2) || '0.00'}</p>
+              <p className="text-white font-medium">
+                Total Cost: ${((product.unitCost || 0) * quantity).toFixed(2)}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex space-x-3 pt-4">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm({ productId: product.id, quantity, expectedDate })}
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-xl text-white font-medium transition-all"
+            >
+              Create Order
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Main Inventory Component
 const Inventory = () => {
-  const navigate = useNavigate();
   const [inventory, setInventory] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [stats, setStats] = useState(null);
@@ -23,17 +285,32 @@ const Inventory = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('stockout_risk');
   const [showReorderModal, setShowReorderModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editQuantity, setEditQuantity] = useState('');
+  
+  // Settings state
+  const [settings, setSettings] = useState({
+    defaultLeadTime: 7,
+    safetyStockDays: 3,
+    minBatchSize: 50,
+    targetStockDays: 60,
+    criticalStockLevel: 10,
+    lowStockLevel: 20,
+    autoSync: false,
+    syncInterval: 30,
+    showAlerts: true,
+    showMetrics: true,
+    defaultView: 'table'
+  });
 
-  // Fetch inventory data using api object
+  // Fetch inventory data
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      console.log('Fetching inventory for platform:', selectedPlatform);
-      const data = await api.inventory(selectedPlatform);
-      console.log('Inventory response:', data);
+      const response = await fetch(`${API_BASE}/api/v1/inventory${selectedPlatform !== 'all' ? `?platform=${selectedPlatform}` : ''}`);
+      const data = await response.json();
       
       if (data.success) {
         setInventory(data.items || []);
@@ -42,70 +319,16 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Failed to fetch inventory:', error);
-      // Use mock data for demonstration if API fails
+      // Set mock data for demonstration
       setMockData();
     } finally {
       setLoading(false);
     }
   };
 
-  // Sync inventory from Shopify
-  const syncFromShopify = async () => {
-    try {
-      console.log('Syncing from Shopify...');
-      const response = await fetch(`${API_BASE}/api/v1/inventory/sync-shopify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const result = await response.json();
-      console.log('Shopify sync result:', result);
-      if (result.success) {
-        await fetchInventory(); // Refresh display
-      }
-    } catch (error) {
-      console.error('Failed to sync from Shopify:', error);
-    }
-  };
-
-  // Update inventory quantity
-  const updateInventory = async (productId, newQuantity) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/v1/inventory/${productId}/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          quantity: Number(newQuantity),
-          reason: 'Manual adjustment from UI'
-        })
-      });
-      const result = await response.json();
-      if (result.success) {
-        setEditingItem(null);
-        await fetchInventory(); // Refresh display
-      }
-    } catch (error) {
-      console.error('Failed to update inventory:', error);
-    }
-  };
-
-  // Seed inventory with initial data
-  const seedInventory = async () => {
-    try {
-      console.log('Seeding inventory...');
-      const result = await api.inventorySeed();
-      console.log('Seed result:', result);
-      if (result.success) {
-        // Refresh inventory after seeding
-        await fetchInventory();
-      }
-    } catch (error) {
-      console.error('Failed to seed inventory:', error);
-    }
-  };
-
-  // Set mock data for demonstration
+  // Set mock data
   const setMockData = () => {
-    const mockInventory = [
+    setInventory([
       {
         id: '1',
         sku: 'IPH15PRO',
@@ -118,58 +341,92 @@ const Inventory = () => {
         reorderPoint: 20,
         reorderQuantity: 100,
         leadTime: 7,
-        batchSize: 50,
         stockoutRisk: 'high',
         daysUntilStockout: 3,
-        lastSold: '2024-12-28T10:30:00',
         salesVelocity: 4.2,
         unitCost: 899.99,
-        totalValue: 10799.88
+        totalValue: 10799.88,
+        shouldReorderNow: true
       }
-    ];
-
-    const mockStats = {
+    ]);
+    
+    setStats({
       totalProducts: 1,
       totalValue: 10799.88,
       lowStockItems: 1,
-      outOfStockItems: 0,
-      criticalItems: 0,
-      avgTurnoverDays: 14,
-      totalReserved: 2,
-      totalIncoming: 50,
-      stockAccuracy: 98.5
-    };
+      criticalItems: 0
+    });
+    
+    setAlerts([{
+      id: '1',
+      type: 'high',
+      product: 'iPhone 15 Pro',
+      message: 'Low stock: 3 days until stockout'
+    }]);
+  };
 
-    const mockAlerts = [
-      {
-        id: '1',
-        type: 'high',
-        product: 'iPhone 15 Pro',
-        message: 'Low stock: 3 days until stockout',
-        time: '1 hour ago'
+  // Update inventory
+  const updateInventory = async (productId, newQuantity) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/inventory/${productId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: Number(newQuantity) })
+      });
+      
+      if (response.ok) {
+        setEditingItem(null);
+        await fetchInventory();
       }
-    ];
+    } catch (error) {
+      console.error('Failed to update inventory:', error);
+    }
+  };
 
-    setInventory(mockInventory);
-    setStats(mockStats);
-    setAlerts(mockAlerts);
+  // Create purchase order
+  const createPurchaseOrder = async (orderData) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/inventory/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData)
+      });
+      
+      if (response.ok) {
+        setShowReorderModal(false);
+        await fetchInventory();
+      }
+    } catch (error) {
+      console.error('Failed to create purchase order:', error);
+    }
+  };
+
+  // Save settings
+  const saveSettings = (newSettings) => {
+    setSettings(newSettings);
+    localStorage.setItem('inventorySettings', JSON.stringify(newSettings));
   };
 
   useEffect(() => {
+    // Load settings from localStorage
+    const savedSettings = localStorage.getItem('inventorySettings');
+    if (savedSettings) {
+      setSettings(JSON.parse(savedSettings));
+    }
+    
     fetchInventory();
   }, [selectedPlatform]);
 
   // Filter and sort inventory
   const processedInventory = inventory
     .filter(item => {
-      const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           item.sku?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesFilter = filterStatus === 'all' || item.stockoutRisk === filterStatus;
       return matchesSearch && matchesFilter;
     })
     .sort((a, b) => {
       const riskOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-      
       switch (sortBy) {
         case 'stockout_risk':
           return riskOrder[a.stockoutRisk] - riskOrder[b.stockoutRisk];
@@ -177,8 +434,6 @@ const Inventory = () => {
           return a.quantity - b.quantity;
         case 'days_until_stockout':
           return a.daysUntilStockout - b.daysUntilStockout;
-        case 'sales_velocity':
-          return b.salesVelocity - a.salesVelocity;
         default:
           return 0;
       }
@@ -194,25 +449,9 @@ const Inventory = () => {
     }
   };
 
-  const handleReorder = (product) => {
-    setSelectedProduct(product);
-    setShowReorderModal(true);
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
-
-  const formatNumber = (num) => {
-    return new Intl.NumberFormat('en-US').format(num);
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Animated background */}
+      {/* Background animation */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
@@ -222,40 +461,20 @@ const Inventory = () => {
         {/* Header */}
         <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="flex justify-between items-center">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
+              Inventory Management
+            </h1>
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => navigate('/dashboard')}
-                className="text-white/60 hover:text-white transition-colors"
+                onClick={() => setShowSettingsModal(true)}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
+                title="Settings"
               >
-                <ChevronRight className="w-6 h-6 rotate-180" />
-              </button>
-              <div>
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
-                  Inventory Management
-                </h1>
-                <p className="text-white/70 mt-2">Real-time stock monitoring and reorder automation</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button 
-                onClick={syncFromShopify}
-                className="bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2"
-                title="Sync inventory from Shopify"
-              >
-                <RefreshCw className="w-5 h-5 text-white" />
-                <span className="text-white font-medium">Sync Shopify</span>
-              </button>
-              <button className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2">
-                <Upload className="w-5 h-5 text-white" />
-                <span className="text-white font-medium">Import</span>
-              </button>
-              <button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-2">
-                <Download className="w-5 h-5 text-white" />
-                <span className="text-white font-medium">Export</span>
+                <Settings className="w-5 h-5 text-white" />
               </button>
               <button
                 onClick={fetchInventory}
-                className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 p-3 rounded-xl transition-all duration-300"
+                className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 p-3 rounded-xl transition-all"
               >
                 <RefreshCw className={`w-5 h-5 text-white ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -263,317 +482,183 @@ const Inventory = () => {
           </div>
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg">
-                <Package className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white/60 text-sm">Total</span>
+        {/* Metrics - only show if enabled in settings */}
+        {settings.showMetrics && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <p className="text-3xl font-bold text-white">{stats?.totalProducts || 0}</p>
+              <p className="text-white/70 text-sm">Total Products</p>
             </div>
-            <p className="text-3xl font-bold text-white">{formatNumber(stats?.totalProducts || 0)}</p>
-            <p className="text-white/70 text-sm mt-1">Total Products</p>
-            <p className="text-green-400 text-xs mt-2">
-              Value: {formatCurrency(stats?.totalValue || 0)}
-            </p>
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <p className="text-3xl font-bold text-white">${(stats?.totalValue || 0).toFixed(2)}</p>
+              <p className="text-white/70 text-sm">Total Value</p>
+            </div>
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <p className="text-3xl font-bold text-orange-400">{stats?.lowStockItems || 0}</p>
+              <p className="text-white/70 text-sm">Low Stock Items</p>
+            </div>
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <p className="text-3xl font-bold text-red-400">{stats?.criticalItems || 0}</p>
+              <p className="text-white/70 text-sm">Critical Items</p>
+            </div>
           </div>
+        )}
 
-          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-red-500 to-orange-600 shadow-lg">
-                <AlertTriangle className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white/60 text-sm">Alert</span>
-            </div>
-            <p className="text-3xl font-bold text-white">{stats?.criticalItems || 0}</p>
-            <p className="text-white/70 text-sm mt-1">Critical Items</p>
-            <p className="text-red-400 text-xs mt-2">
-              Low Stock: {stats?.lowStockItems || 0} items
-            </p>
-          </div>
-
-          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg">
-                <Truck className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white/60 text-sm">Incoming</span>
-            </div>
-            <p className="text-3xl font-bold text-white">{formatNumber(stats?.totalIncoming || 0)}</p>
-            <p className="text-white/70 text-sm mt-1">Units Incoming</p>
-            <p className="text-green-400 text-xs mt-2">
-              Next 7 days
-            </p>
-          </div>
-
-          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-600 shadow-lg">
-                <TrendingDown className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white/60 text-sm">Turnover</span>
-            </div>
-            <p className="text-3xl font-bold text-white">{stats?.avgTurnoverDays || 0}</p>
-            <p className="text-white/70 text-sm mt-1">Avg Days</p>
-            <p className="text-purple-400 text-xs mt-2">
-              Accuracy: {stats?.stockAccuracy || 0}%
-            </p>
-          </div>
-        </div>
-
-        {/* Alerts Section */}
-        {alerts.length > 0 && (
-          <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold text-white flex items-center">
-                <Bell className="w-5 h-5 mr-2" />
-                Stock Alerts
-              </h3>
-              <span className="text-white/60 text-sm">{alerts.length} active</span>
-            </div>
-            <div className="space-y-3">
+        {/* Alerts - only show if enabled in settings */}
+        {settings.showAlerts && alerts.length > 0 && (
+          <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+              <Bell className="w-5 h-5 mr-2" />
+              Stock Alerts ({alerts.length})
+            </h3>
+            <div className="space-y-2">
               {alerts.slice(0, 3).map(alert => (
-                <div key={alert.id} className={`flex items-center justify-between p-4 rounded-xl border ${
-                  alert.type === 'critical' ? 'bg-red-500/10 border-red-500/30' :
-                  alert.type === 'high' ? 'bg-orange-500/10 border-orange-500/30' :
-                  'bg-blue-500/10 border-blue-500/30'
-                }`}>
-                  <div className="flex items-center space-x-3">
-                    {alert.type === 'critical' ? 
-                      <XCircle className="w-5 h-5 text-red-400" /> :
-                      alert.type === 'high' ?
-                      <AlertCircle className="w-5 h-5 text-orange-400" /> :
-                      <Info className="w-5 h-5 text-blue-400" />
-                    }
-                    <div>
-                      <p className="text-white font-medium">{alert.product}</p>
-                      <p className="text-white/60 text-sm">{alert.message}</p>
-                    </div>
+                <div key={alert.id} className="flex items-center justify-between p-3 rounded-xl bg-orange-500/10 border border-orange-500/30">
+                  <div>
+                    <p className="text-white font-medium">{alert.product}</p>
+                    <p className="text-white/60 text-sm">{alert.message}</p>
                   </div>
-                  <span className="text-white/40 text-xs">{alert.time}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Filters and Search */}
-        <div className="mb-6 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20 shadow-2xl">
+        {/* Filters */}
+        <div className="mb-6 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
           <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/40" />
-                <input
-                  type="text"
-                  placeholder="Search by SKU or product name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-            </div>
-            
-            <div className="flex gap-3">
-              <select
-                value={selectedPlatform}
-                onChange={(e) => setSelectedPlatform(e.target.value)}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Platforms</option>
-                <option value="shopify">Shopify</option>
-                <option value="bestbuy" disabled>BestBuy (Coming)</option>
-                <option value="amazon" disabled>Amazon (Coming)</option>
-              </select>
-
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Status</option>
-                <option value="critical">Critical</option>
-                <option value="high">High Risk</option>
-                <option value="medium">Medium Risk</option>
-                <option value="low">Low Risk</option>
-              </select>
-
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="stockout_risk">Sort by Risk</option>
-                <option value="quantity">Sort by Quantity</option>
-                <option value="days_until_stockout">Days to Stockout</option>
-                <option value="sales_velocity">Sales Velocity</option>
-              </select>
-            </div>
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+            />
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            >
+              <option value="all">All Status</option>
+              <option value="critical">Critical</option>
+              <option value="high">High Risk</option>
+              <option value="medium">Medium Risk</option>
+              <option value="low">Low Risk</option>
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            >
+              <option value="stockout_risk">Sort by Risk</option>
+              <option value="quantity">Sort by Quantity</option>
+              <option value="days_until_stockout">Days to Stockout</option>
+            </select>
           </div>
         </div>
 
         {/* Inventory Table */}
-        <div className="backdrop-blur-xl bg-white/10 rounded-3xl border border-white/20 shadow-2xl overflow-hidden">
+        <div className="backdrop-blur-xl bg-white/10 rounded-3xl border border-white/20 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-white/5 border-b border-white/10">
                 <tr>
-                  <th className="text-left p-4 text-white/80 font-semibold">Product</th>
-                  <th className="text-center p-4 text-white/80 font-semibold">Stock Level</th>
-                  <th className="text-center p-4 text-white/80 font-semibold">Status</th>
-                  <th className="text-center p-4 text-white/80 font-semibold">Sales Velocity</th>
-                  <th className="text-center p-4 text-white/80 font-semibold">Days to Stockout</th>
-                  <th className="text-center p-4 text-white/80 font-semibold">Reorder Info</th>
-                  <th className="text-right p-4 text-white/80 font-semibold">Actions</th>
+                  <th className="text-left p-4 text-white/80">Product</th>
+                  <th className="text-center p-4 text-white/80">Stock</th>
+                  <th className="text-center p-4 text-white/80">Status</th>
+                  <th className="text-center p-4 text-white/80">Velocity</th>
+                  <th className="text-center p-4 text-white/80">Days Left</th>
+                  <th className="text-right p-4 text-white/80">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="text-center py-12">
+                    <td colSpan="6" className="text-center py-12">
                       <RefreshCw className="w-8 h-8 text-white/40 animate-spin mx-auto" />
                       <p className="text-white/60 mt-4">Loading inventory...</p>
                     </td>
                   </tr>
                 ) : processedInventory.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="text-center py-12">
+                    <td colSpan="6" className="text-center py-12">
                       <Package className="w-8 h-8 text-white/40 mx-auto" />
                       <p className="text-white/60 mt-4">No products found</p>
-                      <button
-                        onClick={seedInventory}
-                        className="mt-4 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 px-6 py-3 rounded-xl text-white font-medium transition-all"
-                      >
-                        Seed Sample Inventory
-                      </button>
                     </td>
                   </tr>
                 ) : (
                   processedInventory.map(item => (
-                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/5">
                       <td className="p-4">
-                        <div>
-                          <p className="text-white font-medium">{item.title}</p>
-                          <p className="text-white/50 text-sm">SKU: {item.sku}</p>
-                          <p className="text-white/40 text-xs mt-1">{item.channel}</p>
-                        </div>
+                        <p className="text-white font-medium">{item.title}</p>
+                        <p className="text-white/50 text-sm">SKU: {item.sku}</p>
                       </td>
-                      
-                      <td className="p-4">
-                        <div className="text-center">
-                          {editingItem === item.id ? (
-                            <div className="flex items-center justify-center space-x-2">
-                              <input
-                                type="number"
-                                value={editQuantity}
-                                onChange={(e) => setEditQuantity(e.target.value)}
-                                className="w-24 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-center"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => updateInventory(item.id, editQuantity)}
-                                className="p-2 bg-green-500/20 hover:bg-green-500/30 rounded-lg"
-                              >
-                                <CheckCircle className="w-4 h-4 text-green-400" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditingItem(null);
-                                  setEditQuantity('');
-                                }}
-                                className="p-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg"
-                              >
-                                <XCircle className="w-4 h-4 text-red-400" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="flex items-center justify-center space-x-4 cursor-pointer hover:bg-white/5 rounded-lg p-2"
-                              onClick={() => {
-                                setEditingItem(item.id);
-                                setEditQuantity(String(item.quantity));
-                              }}
+                      <td className="p-4 text-center">
+                        {editingItem === item.id ? (
+                          <div className="flex items-center justify-center space-x-2">
+                            <input
+                              type="number"
+                              value={editQuantity}
+                              onChange={(e) => setEditQuantity(e.target.value)}
+                              className="w-20 px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-center"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => updateInventory(item.id, editQuantity)}
+                              className="p-1 bg-green-500/20 rounded"
                             >
-                              <div>
-                                <p className="text-2xl font-bold text-white">{item.quantity}</p>
-                                <p className="text-white/50 text-xs">Click to edit</p>
-                              </div>
-                              <div className="text-left">
-                                <p className="text-white/70 text-sm">Available: {item.available}</p>
-                                <p className="text-white/70 text-sm">Reserved: {item.reserved}</p>
-                                {item.incoming > 0 && (
-                                  <p className="text-green-400 text-sm">Incoming: {item.incoming}</p>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                              <CheckCircle className="w-4 h-4 text-green-400" />
+                            </button>
+                            <button
+                              onClick={() => setEditingItem(null)}
+                              className="p-1 bg-red-500/20 rounded"
+                            >
+                              <XCircle className="w-4 h-4 text-red-400" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => {
+                              setEditingItem(item.id);
+                              setEditQuantity(String(item.quantity));
+                            }}
+                            className="cursor-pointer hover:bg-white/5 rounded p-2"
+                          >
+                            <p className="text-2xl font-bold text-white">{item.quantity}</p>
+                            <p className="text-white/50 text-xs">Click to edit</p>
+                          </div>
+                        )}
                       </td>
-                      
                       <td className="p-4 text-center">
                         <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getRiskBadgeColor(item.stockoutRisk)}`}>
-                          {item.stockoutRisk.toUpperCase()}
+                          {item.stockoutRisk?.toUpperCase()}
                         </span>
                       </td>
-                      
                       <td className="p-4 text-center">
-                        <div className="flex items-center justify-center space-x-1">
-                          {item.salesVelocity > 5 ? 
-                            <ArrowUp className="w-4 h-4 text-green-400" /> :
-                            item.salesVelocity > 2 ?
-                            <ArrowUp className="w-4 h-4 text-yellow-400" /> :
-                            <ArrowDown className="w-4 h-4 text-red-400" />
-                          }
-                          <span className="text-white font-medium">{item.salesVelocity}</span>
-                          <span className="text-white/50 text-sm">units/day</span>
-                        </div>
+                        <span className="text-white">{item.salesVelocity?.toFixed(1) || 0}</span>
+                        <span className="text-white/50 text-sm"> /day</span>
                       </td>
-                      
                       <td className="p-4 text-center">
-                        <div className={`font-bold text-lg ${
+                        <span className={`font-bold text-lg ${
                           item.daysUntilStockout <= 3 ? 'text-red-400' :
                           item.daysUntilStockout <= 7 ? 'text-orange-400' :
-                          item.daysUntilStockout <= 14 ? 'text-yellow-400' :
                           'text-green-400'
                         }`}>
-                          {item.daysUntilStockout} days
-                        </div>
+                          {item.daysUntilStockout || 0}
+                        </span>
                       </td>
-                      
-                      <td className="p-4">
-                        <div className="text-center text-sm">
-                          <p className="text-white/70">Reorder Point: {item.reorderPoint} units</p>
-                          <p className="text-white/70">Order Qty: {item.reorderQuantity}</p>
-                          <p className="text-white/50 text-xs">Lead: {item.leadTime} days</p>
-                          {item.shouldReorder && (
-                            <p className="text-orange-400 font-medium mt-1">REORDER NOW</p>
-                          )}
-                          {item.reorderDate && !item.shouldReorder && (
-                            <p className="text-yellow-400 text-xs mt-1">
-                              Reorder by: {new Date(item.reorderDate).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                      
-                      <td className="p-4">
-                        <div className="flex items-center justify-end space-x-2">
-                          {item.quantity <= item.reorderPoint && (
-                            <button
-                              onClick={() => handleReorder(item)}
-                              className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-3 py-2 rounded-lg transition-all duration-300 flex items-center space-x-1"
-                            >
-                              <ShoppingCart className="w-4 h-4 text-white" />
-                              <span className="text-white text-sm">Reorder</span>
-                            </button>
-                          )}
-                          <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
-                            <Edit2 className="w-4 h-4 text-white/60" />
+                      <td className="p-4 text-right">
+                        {item.shouldReorderNow && (
+                          <button
+                            onClick={() => {
+                              setSelectedProduct(item);
+                              setShowReorderModal(true);
+                            }}
+                            className="bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-2 rounded-lg text-white text-sm"
+                          >
+                            Reorder
                           </button>
-                          <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
-                            <BarChart2 className="w-4 h-4 text-white/60" />
-                          </button>
-                        </div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -582,69 +667,22 @@ const Inventory = () => {
             </table>
           </div>
         </div>
-
-        {/* Reorder Modal */}
-        {showReorderModal && selectedProduct && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-md w-full mx-4">
-              <h3 className="text-2xl font-bold text-white mb-4">Create Reorder</h3>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-white/70 text-sm mb-2">Product</p>
-                  <p className="text-white font-medium">{selectedProduct.title}</p>
-                  <p className="text-white/50 text-sm">SKU: {selectedProduct.sku}</p>
-                </div>
-                
-                <div>
-                  <label className="text-white/70 text-sm block mb-2">Quantity</label>
-                  <input
-                    type="number"
-                    defaultValue={selectedProduct.reorderQuantity}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
-                  />
-                </div>
-                
-                <div>
-                  <label className="text-white/70 text-sm block mb-2">Expected Delivery</label>
-                  <input
-                    type="date"
-                    defaultValue={new Date(Date.now() + selectedProduct.leadTime * 86400000).toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
-                  />
-                </div>
-                
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-                  <p className="text-blue-400 text-sm font-medium mb-2">Reorder Information</p>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-white/70">Batch Size: {selectedProduct.batchSize} units</p>
-                    <p className="text-white/70">Lead Time: {selectedProduct.leadTime} days</p>
-                    <p className="text-white/70">Unit Cost: {formatCurrency(selectedProduct.unitCost)}</p>
-                    <p className="text-white font-medium">Total: {formatCurrency(selectedProduct.unitCost * selectedProduct.reorderQuantity)}</p>
-                  </div>
-                </div>
-                
-                <div className="flex space-x-3 pt-4">
-                  <button
-                    onClick={() => setShowReorderModal(false)}
-                    className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      // Handle reorder submission
-                      setShowReorderModal(false);
-                    }}
-                    className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-xl text-white font-medium transition-all"
-                  >
-                    Create Order
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Modals */}
+      <SettingsModal
+        show={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        settings={settings}
+        onSave={saveSettings}
+      />
+      
+      <ReorderModal
+        show={showReorderModal}
+        onClose={() => setShowReorderModal(false)}
+        product={selectedProduct}
+        onConfirm={createPurchaseOrder}
+      />
     </div>
   );
 };
