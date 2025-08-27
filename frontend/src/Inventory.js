@@ -5,11 +5,217 @@ import {
   Plus, Edit2, Bell, Clock, Truck, ChevronRight,
   BarChart2, AlertCircle, CheckCircle, XCircle,
   ArrowUp, ArrowDown, Settings, Calendar, Info,
-  Save, X
+  Save, X, Edit, Boxes, Timer
 } from 'lucide-react';
 
 // Configuration
 const API_BASE = (process.env.REACT_APP_API_BASE || "http://localhost:8080").replace(/\/$/, "");
+
+// Product Edit Modal Component
+const ProductEditModal = ({ show, onClose, product, onSave }) => {
+  const [formData, setFormData] = useState({
+    leadTimeDays: 30,
+    moq: 100,
+    batchSize: 50,
+    safetyStockDays: 14,
+    supplierName: '',
+    supplierCountry: 'China',
+    shippingMethod: 'Sea'
+  });
+
+  useEffect(() => {
+    if (product) {
+      setFormData({
+        leadTimeDays: product.leadTimeDays || 30,
+        moq: product.moq || 100,
+        batchSize: product.batchSize || 50,
+        safetyStockDays: product.safetyStockDays || 14,
+        supplierName: product.supplierName || '',
+        supplierCountry: product.supplierCountry || 'China',
+        shippingMethod: product.shippingMethod || 'Sea'
+      });
+    }
+  }, [product]);
+
+  const handleSave = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/inventory/${product.id}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      
+      if (response.ok) {
+        onSave(formData);
+        onClose();
+      }
+    } catch (error) {
+      console.error('Failed to save product settings:', error);
+    }
+  };
+
+  if (!show || !product) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h3 className="text-2xl font-bold text-white">Edit Product Settings</h3>
+            <p className="text-white/60 mt-1">{product.title} - SKU: {product.sku}</p>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Lead Time & Ordering */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
+              <Clock className="w-5 h-5 mr-2" />
+              Lead Time & Ordering
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Lead Time (days)</label>
+                <input
+                  type="number"
+                  value={formData.leadTimeDays}
+                  onChange={(e) => setFormData({...formData, leadTimeDays: parseInt(e.target.value) || 0})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Safety Stock Days</label>
+                <input
+                  type="number"
+                  value={formData.safetyStockDays}
+                  onChange={(e) => setFormData({...formData, safetyStockDays: parseInt(e.target.value) || 0})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Batch & MOQ Settings */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
+              <Boxes className="w-5 h-5 mr-2" />
+              Batch & Quantity Settings
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Batch Size</label>
+                <input
+                  type="number"
+                  value={formData.batchSize}
+                  onChange={(e) => setFormData({...formData, batchSize: parseInt(e.target.value) || 0})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+                <p className="text-white/40 text-xs mt-1">Units per batch for ordering</p>
+              </div>
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Min Order Quantity (MOQ)</label>
+                <input
+                  type="number"
+                  value={formData.moq}
+                  onChange={(e) => setFormData({...formData, moq: parseInt(e.target.value) || 0})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+                <p className="text-white/40 text-xs mt-1">Minimum units per order</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Supplier Information */}
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
+              <Truck className="w-5 h-5 mr-2" />
+              Supplier Information
+            </h4>
+            <div className="space-y-4">
+              <div>
+                <label className="text-white/70 text-sm block mb-2">Supplier Name</label>
+                <input
+                  type="text"
+                  value={formData.supplierName}
+                  onChange={(e) => setFormData({...formData, supplierName: e.target.value})}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                  placeholder="Enter supplier name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-white/70 text-sm block mb-2">Country</label>
+                  <select
+                    value={formData.supplierCountry}
+                    onChange={(e) => setFormData({...formData, supplierCountry: e.target.value})}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                  >
+                    <option value="China">China</option>
+                    <option value="USA">USA</option>
+                    <option value="India">India</option>
+                    <option value="Vietnam">Vietnam</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-white/70 text-sm block mb-2">Shipping Method</label>
+                  <select
+                    value={formData.shippingMethod}
+                    onChange={(e) => setFormData({...formData, shippingMethod: e.target.value})}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                  >
+                    <option value="Sea">Sea Freight</option>
+                    <option value="Air">Air Freight</option>
+                    <option value="Express">Express</option>
+                    <option value="Rail">Rail</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Calculated Info */}
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+            <p className="text-blue-400 text-sm font-medium mb-2">Reorder Calculations</p>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-white/60">Reorder Point:</p>
+                <p className="text-white font-medium">
+                  {Math.ceil((product.salesVelocity || 0) * (formData.leadTimeDays + formData.safetyStockDays))} units
+                </p>
+              </div>
+              <div>
+                <p className="text-white/60">Optimal Order Qty:</p>
+                <p className="text-white font-medium">
+                  {Math.max(formData.moq, Math.ceil((product.salesVelocity || 0) * 60 / formData.batchSize) * formData.batchSize)} units
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex space-x-3 mt-8">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium flex items-center justify-center space-x-2"
+          >
+            <Save className="w-5 h-5" />
+            <span>Save Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Settings Modal Component
 const SettingsModal = ({ show, onClose, settings, onSave }) => {
@@ -30,22 +236,18 @@ const SettingsModal = ({ show, onClose, settings, onSave }) => {
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-slate-800/95 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-2xl font-bold text-white">Inventory Settings</h3>
-          <button
-            onClick={onClose}
-            className="text-white/60 hover:text-white transition-colors"
-          >
+          <h3 className="text-2xl font-bold text-white">Global Settings</h3>
+          <button onClick={onClose} className="text-white/60 hover:text-white">
             <X className="w-6 h-6" />
           </button>
         </div>
 
         <div className="space-y-6">
-          {/* Reorder Settings */}
           <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-            <h4 className="text-lg font-semibold text-white mb-4">Reorder Configuration</h4>
+            <h4 className="text-lg font-semibold text-white mb-4">Default Values</h4>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-white/70 text-sm block mb-2">Default Lead Time (days)</label>
+                <label className="text-white/70 text-sm block mb-2">Default Lead Time</label>
                 <input
                   type="number"
                   value={localSettings.defaultLeadTime}
@@ -54,122 +256,13 @@ const SettingsModal = ({ show, onClose, settings, onSave }) => {
                 />
               </div>
               <div>
-                <label className="text-white/70 text-sm block mb-2">Safety Stock Days</label>
+                <label className="text-white/70 text-sm block mb-2">Default Batch Size</label>
                 <input
                   type="number"
-                  value={localSettings.safetyStockDays}
-                  onChange={(e) => setLocalSettings({...localSettings, safetyStockDays: parseInt(e.target.value)})}
+                  value={localSettings.defaultBatchSize}
+                  onChange={(e) => setLocalSettings({...localSettings, defaultBatchSize: parseInt(e.target.value)})}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
                 />
-              </div>
-              <div>
-                <label className="text-white/70 text-sm block mb-2">Min Batch Size</label>
-                <input
-                  type="number"
-                  value={localSettings.minBatchSize}
-                  onChange={(e) => setLocalSettings({...localSettings, minBatchSize: parseInt(e.target.value)})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                />
-              </div>
-              <div>
-                <label className="text-white/70 text-sm block mb-2">Target Stock Days</label>
-                <input
-                  type="number"
-                  value={localSettings.targetStockDays}
-                  onChange={(e) => setLocalSettings({...localSettings, targetStockDays: parseInt(e.target.value)})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Alert Thresholds */}
-          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-            <h4 className="text-lg font-semibold text-white mb-4">Alert Thresholds</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-white/70 text-sm block mb-2">Critical Stock Level</label>
-                <input
-                  type="number"
-                  value={localSettings.criticalStockLevel}
-                  onChange={(e) => setLocalSettings({...localSettings, criticalStockLevel: parseInt(e.target.value)})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                />
-              </div>
-              <div>
-                <label className="text-white/70 text-sm block mb-2">Low Stock Level</label>
-                <input
-                  type="number"
-                  value={localSettings.lowStockLevel}
-                  onChange={(e) => setLocalSettings({...localSettings, lowStockLevel: parseInt(e.target.value)})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Sync Settings */}
-          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-            <h4 className="text-lg font-semibold text-white mb-4">Sync Configuration</h4>
-            <div className="space-y-3">
-              <label className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  checked={localSettings.autoSync}
-                  onChange={(e) => setLocalSettings({...localSettings, autoSync: e.target.checked})}
-                  className="w-5 h-5 bg-white/10 border border-white/20 rounded"
-                />
-                <span className="text-white/80">Enable Auto-Sync</span>
-              </label>
-              <div>
-                <label className="text-white/70 text-sm block mb-2">Sync Interval (minutes)</label>
-                <select
-                  value={localSettings.syncInterval}
-                  onChange={(e) => setLocalSettings({...localSettings, syncInterval: parseInt(e.target.value)})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                >
-                  <option value={5}>Every 5 minutes</option>
-                  <option value={15}>Every 15 minutes</option>
-                  <option value={30}>Every 30 minutes</option>
-                  <option value={60}>Every hour</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Display Settings */}
-          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-            <h4 className="text-lg font-semibold text-white mb-4">Display Options</h4>
-            <div className="space-y-3">
-              <label className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  checked={localSettings.showAlerts}
-                  onChange={(e) => setLocalSettings({...localSettings, showAlerts: e.target.checked})}
-                  className="w-5 h-5 bg-white/10 border border-white/20 rounded"
-                />
-                <span className="text-white/80">Show Stock Alerts</span>
-              </label>
-              <label className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  checked={localSettings.showMetrics}
-                  onChange={(e) => setLocalSettings({...localSettings, showMetrics: e.target.checked})}
-                  className="w-5 h-5 bg-white/10 border border-white/20 rounded"
-                />
-                <span className="text-white/80">Show Metrics Dashboard</span>
-              </label>
-              <div>
-                <label className="text-white/70 text-sm block mb-2">Default View</label>
-                <select
-                  value={localSettings.defaultView}
-                  onChange={(e) => setLocalSettings({...localSettings, defaultView: e.target.value})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                >
-                  <option value="table">Table View</option>
-                  <option value="cards">Card View</option>
-                  <option value="list">List View</option>
-                </select>
               </div>
             </div>
           </div>
@@ -178,16 +271,15 @@ const SettingsModal = ({ show, onClose, settings, onSave }) => {
         <div className="flex space-x-3 mt-8">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors"
+            className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium transition-all flex items-center justify-center space-x-2"
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl text-white font-medium"
           >
-            <Save className="w-5 h-5" />
-            <span>Save Settings</span>
+            Save Settings
           </button>
         </div>
       </div>
@@ -197,12 +289,12 @@ const SettingsModal = ({ show, onClose, settings, onSave }) => {
 
 // Reorder Modal Component
 const ReorderModal = ({ show, onClose, product, onConfirm }) => {
-  const [quantity, setQuantity] = useState(product?.reorderQuantity || 100);
+  const [quantity, setQuantity] = useState(100);
   const [expectedDate, setExpectedDate] = useState('');
 
   useEffect(() => {
     if (product) {
-      setQuantity(product.reorderQuantity);
+      setQuantity(product.reorderQuantity || 100);
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + (product.leadTime || 7));
       setExpectedDate(futureDate.toISOString().split('T')[0]);
@@ -230,6 +322,9 @@ const ReorderModal = ({ show, onClose, product, onConfirm }) => {
               onChange={(e) => setQuantity(parseInt(e.target.value))}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
             />
+            <p className="text-white/40 text-xs mt-1">
+              Batch Size: {product.batchSize || 50} | MOQ: {product.moq || 100}
+            </p>
           </div>
           
           <div>
@@ -242,28 +337,16 @@ const ReorderModal = ({ show, onClose, product, onConfirm }) => {
             />
           </div>
           
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-            <p className="text-blue-400 text-sm font-medium mb-2">Order Summary</p>
-            <div className="space-y-1 text-sm">
-              <p className="text-white/70">Current Stock: {product.quantity} units</p>
-              <p className="text-white/70">Lead Time: {product.leadTime} days</p>
-              <p className="text-white/70">Unit Cost: ${product.unitCost?.toFixed(2) || '0.00'}</p>
-              <p className="text-white font-medium">
-                Total Cost: ${((product.unitCost || 0) * quantity).toFixed(2)}
-              </p>
-            </div>
-          </div>
-          
           <div className="flex space-x-3 pt-4">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors"
+              className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium"
             >
               Cancel
             </button>
             <button
               onClick={() => onConfirm({ productId: product.id, quantity, expectedDate })}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-xl text-white font-medium transition-all"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl text-white font-medium"
             >
               Create Order
             </button>
@@ -286,26 +369,18 @@ const Inventory = () => {
   const [sortBy, setSortBy] = useState('stockout_risk');
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showProductEditModal, setShowProductEditModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editQuantity, setEditQuantity] = useState('');
   
-  // Settings state
   const [settings, setSettings] = useState({
     defaultLeadTime: 7,
-    safetyStockDays: 3,
-    minBatchSize: 50,
-    targetStockDays: 60,
-    criticalStockLevel: 10,
-    lowStockLevel: 20,
-    autoSync: false,
-    syncInterval: 30,
+    defaultBatchSize: 50,
     showAlerts: true,
-    showMetrics: true,
-    defaultView: 'table'
+    showMetrics: true
   });
 
-  // Fetch inventory data
   const fetchInventory = async () => {
     setLoading(true);
     try {
@@ -319,14 +394,12 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Failed to fetch inventory:', error);
-      // Set mock data for demonstration
       setMockData();
     } finally {
       setLoading(false);
     }
   };
 
-  // Set mock data
   const setMockData = () => {
     setInventory([
       {
@@ -341,6 +414,10 @@ const Inventory = () => {
         reorderPoint: 20,
         reorderQuantity: 100,
         leadTime: 7,
+        leadTimeDays: 7,
+        batchSize: 50,
+        moq: 100,
+        safetyStockDays: 3,
         stockoutRisk: 'high',
         daysUntilStockout: 3,
         salesVelocity: 4.2,
@@ -365,7 +442,6 @@ const Inventory = () => {
     }]);
   };
 
-  // Update inventory
   const updateInventory = async (productId, newQuantity) => {
     try {
       const response = await fetch(`${API_BASE}/api/v1/inventory/${productId}/update`, {
@@ -383,7 +459,16 @@ const Inventory = () => {
     }
   };
 
-  // Create purchase order
+  const saveProductSettings = (productData) => {
+    // Update local state
+    setInventory(prev => prev.map(item => 
+      item.id === selectedProduct.id 
+        ? { ...item, ...productData }
+        : item
+    ));
+    fetchInventory(); // Refresh from server
+  };
+
   const createPurchaseOrder = async (orderData) => {
     try {
       const response = await fetch(`${API_BASE}/api/v1/inventory/reorder`, {
@@ -401,23 +486,10 @@ const Inventory = () => {
     }
   };
 
-  // Save settings
-  const saveSettings = (newSettings) => {
-    setSettings(newSettings);
-    localStorage.setItem('inventorySettings', JSON.stringify(newSettings));
-  };
-
   useEffect(() => {
-    // Load settings from localStorage
-    const savedSettings = localStorage.getItem('inventorySettings');
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
-    
     fetchInventory();
   }, [selectedPlatform]);
 
-  // Filter and sort inventory
   const processedInventory = inventory
     .filter(item => {
       const matchesSearch = item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -451,7 +523,6 @@ const Inventory = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Background animation */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
@@ -468,13 +539,13 @@ const Inventory = () => {
               <button
                 onClick={() => setShowSettingsModal(true)}
                 className="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
-                title="Settings"
+                title="Global Settings"
               >
                 <Settings className="w-5 h-5 text-white" />
               </button>
               <button
                 onClick={fetchInventory}
-                className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 p-3 rounded-xl transition-all"
+                className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 p-3 rounded-xl"
               >
                 <RefreshCw className={`w-5 h-5 text-white ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -482,7 +553,7 @@ const Inventory = () => {
           </div>
         </div>
 
-        {/* Metrics - only show if enabled in settings */}
+        {/* Metrics */}
         {settings.showMetrics && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
@@ -495,31 +566,11 @@ const Inventory = () => {
             </div>
             <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
               <p className="text-3xl font-bold text-orange-400">{stats?.lowStockItems || 0}</p>
-              <p className="text-white/70 text-sm">Low Stock Items</p>
+              <p className="text-white/70 text-sm">Low Stock</p>
             </div>
             <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
               <p className="text-3xl font-bold text-red-400">{stats?.criticalItems || 0}</p>
-              <p className="text-white/70 text-sm">Critical Items</p>
-            </div>
-          </div>
-        )}
-
-        {/* Alerts - only show if enabled in settings */}
-        {settings.showAlerts && alerts.length > 0 && (
-          <div className="mb-8 backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
-            <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-              <Bell className="w-5 h-5 mr-2" />
-              Stock Alerts ({alerts.length})
-            </h3>
-            <div className="space-y-2">
-              {alerts.slice(0, 3).map(alert => (
-                <div key={alert.id} className="flex items-center justify-between p-3 rounded-xl bg-orange-500/10 border border-orange-500/30">
-                  <div>
-                    <p className="text-white font-medium">{alert.product}</p>
-                    <p className="text-white/60 text-sm">{alert.message}</p>
-                  </div>
-                </div>
-              ))}
+              <p className="text-white/70 text-sm">Critical</p>
             </div>
           </div>
         )}
@@ -566,6 +617,7 @@ const Inventory = () => {
                   <th className="text-left p-4 text-white/80">Product</th>
                   <th className="text-center p-4 text-white/80">Stock</th>
                   <th className="text-center p-4 text-white/80">Status</th>
+                  <th className="text-center p-4 text-white/80">Batch/Lead</th>
                   <th className="text-center p-4 text-white/80">Velocity</th>
                   <th className="text-center p-4 text-white/80">Days Left</th>
                   <th className="text-right p-4 text-white/80">Actions</th>
@@ -574,14 +626,14 @@ const Inventory = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-12">
+                    <td colSpan="7" className="text-center py-12">
                       <RefreshCw className="w-8 h-8 text-white/40 animate-spin mx-auto" />
                       <p className="text-white/60 mt-4">Loading inventory...</p>
                     </td>
                   </tr>
                 ) : processedInventory.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-12">
+                    <td colSpan="7" className="text-center py-12">
                       <Package className="w-8 h-8 text-white/40 mx-auto" />
                       <p className="text-white/60 mt-4">No products found</p>
                     </td>
@@ -635,6 +687,18 @@ const Inventory = () => {
                         </span>
                       </td>
                       <td className="p-4 text-center">
+                        <div className="text-sm">
+                          <div className="flex items-center justify-center space-x-1 text-white/70">
+                            <Boxes className="w-4 h-4" />
+                            <span>{item.batchSize || 50}</span>
+                          </div>
+                          <div className="flex items-center justify-center space-x-1 text-white/70 mt-1">
+                            <Timer className="w-4 h-4" />
+                            <span>{item.leadTimeDays || item.leadTime || 7}d</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
                         <span className="text-white">{item.salesVelocity?.toFixed(1) || 0}</span>
                         <span className="text-white/50 text-sm"> /day</span>
                       </td>
@@ -647,18 +711,34 @@ const Inventory = () => {
                           {item.daysUntilStockout || 0}
                         </span>
                       </td>
-                      <td className="p-4 text-right">
-                        {item.shouldReorderNow && (
+                      <td className="p-4">
+                        <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => {
                               setSelectedProduct(item);
-                              setShowReorderModal(true);
+                              setShowProductEditModal(true);
                             }}
-                            className="bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-2 rounded-lg text-white text-sm"
+                            className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors group relative"
+                            title="Edit Product Settings"
                           >
-                            Reorder
+                            <Edit2 className="w-4 h-4 text-white/60 group-hover:text-white" />
+                            <span className="absolute -top-8 right-0 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap">
+                              Edit Settings
+                            </span>
                           </button>
-                        )}
+                          {item.shouldReorderNow && (
+                            <button
+                              onClick={() => {
+                                setSelectedProduct(item);
+                                setShowReorderModal(true);
+                              }}
+                              className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-3 py-2 rounded-lg text-white text-sm flex items-center space-x-1"
+                            >
+                              <ShoppingCart className="w-4 h-4" />
+                              <span>Reorder</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -670,11 +750,18 @@ const Inventory = () => {
       </div>
 
       {/* Modals */}
+      <ProductEditModal
+        show={showProductEditModal}
+        onClose={() => setShowProductEditModal(false)}
+        product={selectedProduct}
+        onSave={saveProductSettings}
+      />
+      
       <SettingsModal
         show={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
         settings={settings}
-        onSave={saveSettings}
+        onSave={(newSettings) => setSettings(newSettings)}
       />
       
       <ReorderModal
