@@ -1,4 +1,4 @@
-// backend/src/routes/inventory.ts - COMPLETE INVENTORY MANAGEMENT SYSTEM
+// backend/src/routes/inventory.ts - COMPLETE FIXED VERSION
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 
@@ -98,10 +98,10 @@ router.get('/', async (req, res) => {
       // Get last sale date
       const lastSale = product.orderItems[0]?.order.createdAt;
       
-      // Inventory configuration (these could be stored in DB)
-      const leadTime = 7; // Days to receive order
-      const minBatchSize = 50; // Minimum order quantity
-      const safetyStockDays = 3; // Buffer days
+      // Use product-specific settings or defaults
+      const leadTime = product.leadTimeDays || 7;
+      const minBatchSize = product.batchSize || 50;
+      const safetyStockDays = product.safetyStockDays || 3;
       
       // Calculate when to reorder
       const reorderDate = calculateReorderDate(
@@ -118,33 +118,6 @@ router.get('/', async (req, res) => {
         minBatchSize,
         60 // Target 60 days of stock
       );
-
-// Add to backend/src/routes/inventory.ts
-router.post('/:productId/settings', async (req, res) => {
-  try {
-    const { productId } = req.params;
-    const settings = req.body;
-    
-    await prisma.product.update({
-      where: { id: productId },
-      data: {
-        leadTimeDays: settings.leadTimeDays,
-        moq: settings.moq,
-        batchSize: settings.batchSize,
-        safetyStockDays: settings.safetyStockDays,
-        supplierName: settings.supplierName,
-        supplierCountry: settings.supplierCountry,
-        shippingMethod: settings.shippingMethod
-      }
-    });
-    
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-
       
       // Calculate days until stockout
       const daysUntilStockout = salesVelocity > 0 
@@ -194,9 +167,12 @@ router.post('/:productId/settings', async (req, res) => {
         sales90Days,
         lastSold: lastSale?.toISOString() || null,
         
-        // Reorder calculations
+        // Reorder calculations with product-specific settings
         leadTime,
+        leadTimeDays: product.leadTimeDays || leadTime,
         minBatchSize,
+        batchSize: product.batchSize || minBatchSize,
+        moq: product.moq || 100,
         safetyStockDays,
         reorderPoint: Math.ceil(salesVelocity * (leadTime + safetyStockDays)),
         reorderQuantity,
@@ -211,7 +187,12 @@ router.post('/:productId/settings', async (req, res) => {
         
         // Financial
         unitCost: (product.priceCents || 0) / 100,
-        totalValue: currentStock * ((product.priceCents || 0) / 100)
+        totalValue: currentStock * ((product.priceCents || 0) / 100),
+        
+        // Supplier info
+        supplierName: product.supplierName,
+        supplierCountry: product.supplierCountry,
+        shippingMethod: product.shippingMethod
       };
     });
     
@@ -272,6 +253,39 @@ router.post('/:productId/settings', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message || 'Failed to fetch inventory' 
+    });
+  }
+});
+
+// POST /api/v1/inventory/:productId/settings - Update product settings
+router.post('/:productId/settings', async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const settings = req.body;
+    
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: {
+        leadTimeDays: settings.leadTimeDays,
+        moq: settings.moq,
+        batchSize: settings.batchSize,
+        safetyStockDays: settings.safetyStockDays,
+        supplierName: settings.supplierName,
+        supplierCountry: settings.supplierCountry,
+        shippingMethod: settings.shippingMethod
+      }
+    });
+    
+    res.json({ 
+      success: true,
+      message: 'Product settings updated successfully',
+      product: updatedProduct
+    });
+  } catch (error: any) {
+    console.error('Product settings update error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to update product settings'
     });
   }
 });
@@ -381,7 +395,7 @@ router.post('/sync-shopify', async (req, res) => {
     console.error('Shopify inventory sync error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message || 'Shopify sync failed'
     });
   }
 });
@@ -436,9 +450,10 @@ router.post('/:productId/update', async (req, res) => {
     });
     
   } catch (error: any) {
+    console.error('Inventory update error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message || 'Failed to update inventory'
     });
   }
 });
@@ -499,9 +514,10 @@ router.post('/process-sale', async (req, res) => {
     });
     
   } catch (error: any) {
+    console.error('Process sale error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message || 'Failed to process sale'
     });
   }
 });
@@ -546,9 +562,10 @@ router.post('/reorder', async (req, res) => {
     });
     
   } catch (error: any) {
+    console.error('Reorder error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message || 'Failed to create purchase order'
     });
   }
 });
