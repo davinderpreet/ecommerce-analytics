@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Dashboard from './Dashboard';
 import ProductPerformance from './ProductPerformance';
 import Inventory from './Inventory';
+import ReturnLog from './ReturnLog';
 import Returns from './Returns'; // Add this import
 import './App.css';
 
