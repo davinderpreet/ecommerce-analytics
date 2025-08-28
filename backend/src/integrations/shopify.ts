@@ -276,13 +276,8 @@ export async function syncShopifyOrders(days = 7) {
           try {
             // Upsert order with enhanced conflict handling
             const existingOrder = await prisma.order.findUnique({
-  where: { 
-    channelId_channelRef: {
-      channelId: channel.id,
-      channelRef: order.id.toString()
-    }
-  }
-})
+              where: { channelRef: order.id }
+            });
 
             let savedOrder;
             if (existingOrder) {
@@ -344,7 +339,7 @@ export async function syncShopifyOrders(days = 7) {
               let productId: string | undefined;
               if (sku) {
                 try {
-                  let product = await prisma.product.findUnique({where: { channelId_sku: {channelId: channel.id, sku: variant.sku }}})
+                  let product = await prisma.product.findUnique({ where: { sku } });
                   if (!product) {
                     product = await prisma.product.create({
                       data: {
