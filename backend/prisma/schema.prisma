@@ -126,7 +126,7 @@ model Inventory {
   @@index([productId])
   @@index([channelId])
 }
-
+model Return {
 id                        String      @id @default(cuid())
   returnNumber              String      @unique
   createdAt                 DateTime    @default(now())
