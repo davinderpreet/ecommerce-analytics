@@ -1,4 +1,4 @@
-// backend/src/services/inventoryService.ts - SIMPLE VERSION USING EXISTING MODELS
+// backend/src/services/inventoryService.ts - COMPLETE FIXED VERSION
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -69,7 +69,8 @@ export class InventoryService {
       await prisma.inventory.update({
         where: { id: inventory.id },
         data: {
-          quantity: inventory.quantity - quantity
+          quantity: inventory.quantity - quantity,
+          available: Math.max(0, inventory.available - quantity)
         }
       });
     }
@@ -84,17 +85,31 @@ export class InventoryService {
     });
     
     if (!inventory) {
+      // FIXED: Get product to get channelId
+      const product = await prisma.product.findUnique({
+        where: { id: productId }
+      });
+      
+      if (!product) {
+        throw new Error('Product not found');
+      }
+      
+      // FIXED: Add required channelId when creating inventory
       inventory = await prisma.inventory.create({
         data: {
           productId,
-          quantity
+          channelId: product.channelId,
+          quantity,
+          reserved: 0,
+          available: quantity
         }
       });
     } else {
-      await prisma.inventory.update({
+      inventory = await prisma.inventory.update({
         where: { id: inventory.id },
         data: {
-          quantity: inventory.quantity + quantity
+          quantity: inventory.quantity + quantity,
+          available: inventory.available + quantity
         }
       });
     }
@@ -120,6 +135,100 @@ export class InventoryService {
       const stock = p.inventory?.quantity || 0;
       return stock <= threshold;
     });
+  }
+  
+  /**
+   * Reserve inventory for an order
+   */
+  async reserveInventory(productId: string, quantity: number) {
+    const inventory = await prisma.inventory.findUnique({
+      where: { productId }
+    });
+    
+    if (!inventory || inventory.available < quantity) {
+      throw new Error('Insufficient inventory available');
+    }
+    
+    return await prisma.inventory.update({
+      where: { id: inventory.id },
+      data: {
+        reserved: inventory.reserved + quantity,
+        available: inventory.available - quantity
+      }
+    });
+  }
+  
+  /**
+   * Release reserved inventory
+   */
+  async releaseReservedInventory(productId: string, quantity: number) {
+    const inventory = await prisma.inventory.findUnique({
+      where: { productId }
+    });
+    
+    if (!inventory) {
+      throw new Error('Inventory record not found');
+    }
+    
+    return await prisma.inventory.update({
+      where: { id: inventory.id },
+      data: {
+        reserved: Math.max(0, inventory.reserved - quantity),
+        available: inventory.available + quantity
+      }
+    });
+  }
+  
+  /**
+   * Commit reserved inventory (convert reserved to sold)
+   */
+  async commitReservedInventory(productId: string, quantity: number) {
+    const inventory = await prisma.inventory.findUnique({
+      where: { productId }
+    });
+    
+    if (!inventory || inventory.reserved < quantity) {
+      throw new Error('Insufficient reserved inventory');
+    }
+    
+    return await prisma.inventory.update({
+      where: { id: inventory.id },
+      data: {
+        reserved: inventory.reserved - quantity,
+        quantity: inventory.quantity - quantity
+      }
+    });
+  }
+  
+  /**
+   * Get inventory summary stats
+   */
+  async getInventoryStats() {
+    const products = await prisma.product.findMany({
+      where: { active: true },
+      include: { inventory: true }
+    });
+    
+    const totalProducts = products.length;
+    const outOfStock = products.filter(p => (p.inventory?.quantity || 0) === 0).length;
+    const lowStock = products.filter(p => {
+      const qty = p.inventory?.quantity || 0;
+      return qty > 0 && qty <= 20;
+    }).length;
+    
+    const totalValue = products.reduce((sum, p) => {
+      const qty = p.inventory?.quantity || 0;
+      const cost = p.costCents || 0;
+      return sum + (qty * cost);
+    }, 0);
+    
+    return {
+      totalProducts,
+      outOfStock,
+      lowStock,
+      totalValue: totalValue / 100,
+      inStock: totalProducts - outOfStock
+    };
   }
 }
 
