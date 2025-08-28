@@ -127,8 +127,7 @@ model Inventory {
   @@index([channelId])
 }
 
-model Return {
-  id                        String      @id @default(cuid())
+id                        String      @id @default(cuid())
   returnNumber              String      @unique
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
@@ -137,7 +136,7 @@ model Return {
   channelId                 String
   channel                   Channel     @relation(fields: [channelId], references: [id])
   customerEmail             String
-  status                    String      @default("pending") // pending, approved, rejected, received, inspected, completed
+  status                    String      @default("pending")
   totalReturnValueCents     Int
   refundAmountCents         Int?
   restockingFeeCents        Int?        @default(0)
@@ -148,21 +147,16 @@ model Return {
   completedAt               DateTime?
   items                     ReturnItem[]
   
-  // Cost Tracking Fields (NEW)
-  returnLabelCostCents      Int?        @default(0)    // Cost of return shipping label
-  processingCostCents       Int?        @default(500)  // Labor/handling cost (default $5)
-  paymentProcessingFeeCents Int?        @default(0)    // Credit card refund fees
-  productValueLossCents     Int?        @default(0)    // Loss from product condition
-  totalActualLossCents      Int?        @default(0)    // Total calculated loss
-  keepItRefund              Boolean     @default(false) // Whether keep-it was recommended
-  supplierChargebackCents   Int?        @default(0)    // Amount to charge supplier
-  returnDecisionReason      String?                     // Why approved/rejected
+  // New fields for cost tracking
+  shippingCostCents         Int?        @default(0)    // Manual shipping cost entry
+  returnLabelCostCents      Int?        @default(0)    // Manual return label cost
   
   @@index([orderId])
   @@index([channelId])
   @@index([status])
   @@index([createdAt])
 }
+
 
 model ReturnItem {
   id                String      @id @default(cuid())
@@ -177,28 +171,18 @@ model ReturnItem {
   sku               String
   productTitle      String
   quantityReturned  Int
-  quantityRestockable Int       @default(0)
-  quantityDamaged   Int         @default(0)
   unitPriceCents    Int
   totalValueCents   Int
-  reasonCategory    String      // defective, not_as_described, changed_mind, damaged_in_shipping, wrong_item, other
-  reasonDetail      String?     @db.Text
-  batchNumber       String?
-  condition         String      @default("pending_inspection")
   
-  // Enhanced Tracking Fields (NEW)
-  originalCondition String?     @default("new")     // Condition when sold
-  inspectedCondition String?                        // Actual return condition
-  resaleValueCents  Int?                           // What we can resell for
-  resaleChannel     String?                         // 'new', 'open-box', 'refurbished', 'clearance', 'scrap'
-  inspectionNotes   String?     @db.Text           // Inspector notes
-  disposalRequired  Boolean     @default(false)    // Needs disposal
-  supplierDefect    Boolean     @default(false)    // Is this a supplier issue
+  // Product condition fields
+  productCondition  String      @default("100")  // "100", "80", "50", "20"
+  conditionNotes    String?     @db.Text
+  reasonCategory    String      @default("not_specified")
+  reasonDetail      String?     @db.Text
   
   @@index([returnId])
   @@index([productId])
 }
-
 // NEW MODELS FOR COST TRACKING
 
 model ProductReturnMetrics {
