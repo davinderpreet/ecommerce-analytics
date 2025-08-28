@@ -272,4 +272,363 @@ const ReturnLog = () => {
                       </p>
                     </div>
                     <div>
-                      <p
+                      <p className="text-white/60 text-sm">Date</p>
+                      <p className="text-white font-medium">
+                        {new Date(orderData.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 2: Select Products */}
+                <div className="mb-6">
+                  <label className="block text-white/70 text-sm mb-4">
+                    Step 2: Select Products to Return
+                  </label>
+                  <div className="space-y-3">
+                    {selectedProducts.map((item, index) => (
+                      <div 
+                        key={item.id} 
+                        className={`p-4 bg-white/5 rounded-xl border transition-all ${
+                          item.selected ? 'border-purple-500' : 'border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={item.selected}
+                            onChange={() => toggleProduct(index)}
+                            className="mt-1 w-5 h-5 rounded"
+                          />
+                          
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <p className="text-white font-medium">{item.title}</p>
+                                <p className="text-white/60 text-sm">SKU: {item.sku}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-white">
+                                  ${(item.priceCents / 100).toFixed(2)} × {item.quantity}
+                                </p>
+                                <p className="text-white/60 text-sm">
+                                  Total: ${(item.totalCents / 100).toFixed(2)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {item.selected && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-3 border-t border-white/10">
+                                <div>
+                                  <label className="block text-white/60 text-xs mb-1">
+                                    Quantity to Return
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={item.quantity}
+                                    value={item.quantityReturned}
+                                    onChange={(e) => updateProductCondition(index, 'quantityReturned', parseInt(e.target.value))}
+                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                  />
+                                </div>
+                                
+                                <div>
+                                  <label className="block text-white/60 text-xs mb-1">
+                                    Product Condition
+                                  </label>
+                                  <select
+                                    value={item.productCondition}
+                                    onChange={(e) => updateProductCondition(index, 'productCondition', e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                  >
+                                    <option value="100">New - 100%</option>
+                                    <option value="80">Like New - 80%</option>
+                                    <option value="50">Used - 50%</option>
+                                    <option value="20">Damaged - 20%</option>
+                                  </select>
+                                </div>
+                                
+                                <div className="md:col-span-2">
+                                  <label className="block text-white/60 text-xs mb-1">
+                                    Condition Notes (Optional)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={item.conditionNotes}
+                                    onChange={(e) => updateProductCondition(index, 'conditionNotes', e.target.value)}
+                                    placeholder="Describe condition..."
+                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-white/40"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Step 3 & 4: Shipping Costs */}
+                <div className="mb-6">
+                  <label className="block text-white/70 text-sm mb-4">
+                    Step 3 & 4: Shipping Costs
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-white/60 text-xs mb-1">
+                        Shipping Cost (Manual Entry)
+                      </label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={shippingCost}
+                          onChange={(e) => setShippingCost(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/60 text-xs mb-1">
+                        Return Label Cost (Manual Entry)
+                      </label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={returnLabelCost}
+                          onChange={(e) => setReturnLabelCost(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Notes */}
+                <div className="mb-6">
+                  <label className="block text-white/60 text-sm mb-2">
+                    Additional Notes (Optional)
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Any additional information..."
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowNewReturn(false)}
+                    className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createReturn}
+                    disabled={selectedProducts.filter(p => p.selected).length === 0}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+                  >
+                    <Save className="w-5 h-5" />
+                    Create Return
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Returns List */}
+      <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Return #</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Order #</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Customer</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Products</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Value</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Costs</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Status</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Date</th>
+              <th className="px-6 py-4 text-left text-white/70 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {returns.map((ret) => (
+              <tr key={ret.id} className="border-b border-white/5 hover:bg-white/5">
+                <td className="px-6 py-4 text-white font-medium">
+                  {ret.returnNumber}
+                </td>
+                <td className="px-6 py-4 text-white/80">
+                  {ret.order?.number || '-'}
+                </td>
+                <td className="px-6 py-4 text-white/80">
+                  {ret.customerEmail}
+                </td>
+                <td className="px-6 py-4 text-white/80">
+                  {ret.items?.length || 0} items
+                </td>
+                <td className="px-6 py-4 text-white/80">
+                  ${(ret.totalReturnValueCents / 100).toFixed(2)}
+                </td>
+                <td className="px-6 py-4 text-white/80">
+                  <div className="text-sm">
+                    <div>Ship: ${((ret.shippingCostCents || 0) / 100).toFixed(2)}</div>
+                    <div>Label: ${((ret.returnLabelCostCents || 0) / 100).toFixed(2)}</div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <StatusBadge status={ret.status} />
+                </td>
+                <td className="px-6 py-4 text-white/80">
+                  {new Date(ret.createdAt).toLocaleDateString()}
+                </td>
+                <td className="px-6 py-4">
+                  <button
+                    onClick={() => setSelectedReturn(ret)}
+                    className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/60 hover:text-white transition-all"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {returns.length === 0 && (
+          <div className="px-6 py-12 text-center text-white/60">
+            No returns found. Click "Log New Return" to create one.
+          </div>
+        )}
+      </div>
+
+      {/* Return Details Modal */}
+      {selectedReturn && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+          <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl p-8 max-w-3xl w-full max-h-[80vh] overflow-y-auto border border-white/20">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-white">
+                Return {selectedReturn.returnNumber}
+              </h2>
+              <button
+                onClick={() => setSelectedReturn(null)}
+                className="text-white/60 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Return Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-white/60 text-sm">Status</p>
+                  <StatusBadge status={selectedReturn.status} />
+                </div>
+                <div>
+                  <p className="text-white/60 text-sm">Created</p>
+                  <p className="text-white">
+                    {new Date(selectedReturn.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-sm">Order</p>
+                  <p className="text-white">{selectedReturn.order?.number}</p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-sm">Customer</p>
+                  <p className="text-white">{selectedReturn.customerEmail}</p>
+                </div>
+              </div>
+
+              {/* Products */}
+              <div>
+                <h3 className="text-white font-medium mb-3">Returned Products</h3>
+                <div className="space-y-2">
+                  {selectedReturn.items?.map((item) => (
+                    <div key={item.id} className="p-3 bg-white/5 rounded-lg border border-white/10">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-white font-medium">{item.productTitle}</p>
+                          <p className="text-white/60 text-sm">
+                            SKU: {item.sku} | Qty: {item.quantityReturned}
+                          </p>
+                          <p className="text-white/60 text-sm">
+                            Condition: {item.productCondition}% 
+                            {item.conditionNotes && ` - ${item.conditionNotes}`}
+                          </p>
+                        </div>
+                        <p className="text-white">
+                          ${(item.totalValueCents / 100).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cost Summary */}
+              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                <h3 className="text-white font-medium mb-3">Cost Summary</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Return Value</span>
+                    <span className="text-white">
+                      ${(selectedReturn.totalReturnValueCents / 100).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Shipping Cost</span>
+                    <span className="text-white">
+                      ${((selectedReturn.shippingCostCents || 0) / 100).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Return Label Cost</span>
+                    <span className="text-white">
+                      ${((selectedReturn.returnLabelCostCents || 0) / 100).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-white/10 flex justify-between font-medium">
+                    <span className="text-white">Total Cost</span>
+                    <span className="text-red-400">
+                      ${(
+                        ((selectedReturn.shippingCostCents || 0) + 
+                         (selectedReturn.returnLabelCostCents || 0)) / 100
+                      ).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              {selectedReturn.notes && (
+                <div>
+                  <h3 className="text-white font-medium mb-2">Notes</h3>
+                  <p className="text-white/80 p-3 bg-white/5 rounded-lg">
+                    {selectedReturn.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ReturnLog;
