@@ -810,20 +810,327 @@ const Returns = () => {
       )}
 
       {activeView === 'analytics' && (
-        /* Cost Analytics View - Add your analytics components here */
-        <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
-          <h2 className="text-2xl font-bold text-white mb-4">Return Cost Analytics</h2>
-          {/* Add charts and analytics here */}
-          <p className="text-white/60">Analytics dashboard coming soon...</p>
+        <div className="space-y-6">
+          {/* Cost Summary Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4">Cost Breakdown</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-white/60">Shipping Costs</span>
+                  <span className="text-red-400 font-medium">
+                    ${costAnalysis?.costBreakdown?.shipping?.toFixed(2) || '0'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/60">Processing Costs</span>
+                  <span className="text-orange-400 font-medium">
+                    ${costAnalysis?.costBreakdown?.processing?.toFixed(2) || '0'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/60">Product Loss</span>
+                  <span className="text-yellow-400 font-medium">
+                    ${costAnalysis?.costBreakdown?.productLoss?.toFixed(2) || '0'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/60">Other Costs</span>
+                  <span className="text-purple-400 font-medium">
+                    ${costAnalysis?.costBreakdown?.other?.toFixed(2) || '0'}
+                  </span>
+                </div>
+                <div className="pt-3 border-t border-white/20">
+                  <div className="flex justify-between">
+                    <span className="text-white font-bold">Total Loss</span>
+                    <span className="text-red-500 font-bold text-lg">
+                      ${costAnalysis?.summary?.totalReturnCost?.toFixed(2) || '0'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4">Recovery Opportunities</h3>
+              <div className="space-y-4">
+                <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <p className="text-green-400 font-medium">Keep-It Refunds</p>
+                  <p className="text-2xl font-bold text-white mt-1">
+                    ${costAnalysis?.summary?.potentialKeepItSavings?.toFixed(2) || '0'}
+                  </p>
+                  <p className="text-white/60 text-sm mt-1">
+                    {costAnalysis?.summary?.keepItOpportunities || 0} opportunities
+                  </p>
+                </div>
+                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <p className="text-blue-400 font-medium">Supplier Chargebacks</p>
+                  <p className="text-2xl font-bold text-white mt-1">
+                    ${costAnalysis?.summary?.supplierChargebackPotential?.toFixed(2) || '0'}
+                  </p>
+                  <p className="text-white/60 text-sm mt-1">For defective items</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4">Return Metrics</h3>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-white/60 text-sm">Total Returns</p>
+                  <p className="text-3xl font-bold text-white">
+                    {costAnalysis?.summary?.totalReturns || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-sm">Avg Cost per Return</p>
+                  <p className="text-2xl font-bold text-orange-400">
+                    ${costAnalysis?.summary?.avgReturnCost?.toFixed(2) || '0'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-sm">Period</p>
+                  <p className="text-white">{filters.dateRange}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Costly Products */}
+          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+            <h3 className="text-xl font-bold text-white mb-4">Top Loss-Making Products</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-white/10">
+                  <tr>
+                    <th className="text-left p-3 text-white/60">Product</th>
+                    <th className="text-center p-3 text-white/60">Total Loss</th>
+                    <th className="text-center p-3 text-white/60">Avg Loss/Return</th>
+                    <th className="text-center p-3 text-white/60">Main Reason</th>
+                    <th className="text-center p-3 text-white/60">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {costAnalysis?.topCostlyProducts?.map((product, idx) => (
+                    <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
+                      <td className="p-3">
+                        <p className="text-white font-medium">{product.sku}</p>
+                        <p className="text-white/60 text-sm">{product.title}</p>
+                      </td>
+                      <td className="text-center p-3">
+                        <span className="text-red-400 font-medium">${product.totalCost?.toFixed(2)}</span>
+                      </td>
+                      <td className="text-center p-3">
+                        <span className="text-orange-400">${product.avgCostPerReturn?.toFixed(2)}</span>
+                      </td>
+                      <td className="text-center p-3">
+                        <span className="text-white/60 text-sm">{product.mainReason}</span>
+                      </td>
+                      <td className="text-center p-3">
+                        <button 
+                          onClick={() => {
+                            setActiveView('pricing');
+                            setSelectedProduct(product);
+                          }}
+                          className="px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg text-sm"
+                        >
+                          Optimize Price
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Action Recommendations */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Target className="w-6 h-6 text-green-400" />
+                Immediate Actions
+              </h3>
+              <div className="space-y-3">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-white font-medium">1. Implement Keep-It Policy</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    For items under $20 or when return costs exceed 50% of value
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-white font-medium">2. Add Restocking Fees</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    15% for electronics, 20% for furniture to offset costs
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-white font-medium">3. Supplier Accountability</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    Charge back defects exceeding 2% threshold
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-blue-400" />
+                Long-term Strategy
+              </h3>
+              <div className="space-y-3">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-white font-medium">Improve Product Descriptions</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    Reduce "not as described" returns by 30%
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-white font-medium">Quality Control</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    Pre-ship inspection for high-return products
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <p className="text-white font-medium">Dynamic Pricing</p>
+                  <p className="text-white/60 text-sm mt-1">
+                    Build return costs into product pricing
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
       {activeView === 'pricing' && (
-        /* Price Optimization View - Add pricing recommendations here */
-        <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
-          <h2 className="text-2xl font-bold text-white mb-4">Price Optimization</h2>
-          {/* Add pricing recommendations here */}
-          <p className="text-white/60">Pricing recommendations coming soon...</p>
+        <div className="space-y-6">
+          {/* Price Optimization Header */}
+          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+            <h2 className="text-2xl font-bold text-white mb-2">Price Optimization Recommendations</h2>
+            <p className="text-white/60">
+              Adjust pricing to account for return costs and maintain target margins
+            </p>
+          </div>
+
+          {/* Pricing Scenarios */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4">Scenario 1: Price Increase</h3>
+              <div className="space-y-3">
+                <p className="text-white/60 text-sm">Build return costs into pricing</p>
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Average Increase</span>
+                    <span className="text-green-400 font-medium">+8-12%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Margin Protection</span>
+                    <span className="text-white">100%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Customer Impact</span>
+                    <span className="text-orange-400">Medium</span>
+                  </div>
+                </div>
+                <button className="w-full mt-4 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg">
+                  Apply to All Products
+                </button>
+              </div>
+            </div>
+
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4">Scenario 2: Restocking Fees</h3>
+              <div className="space-y-3">
+                <p className="text-white/60 text-sm">Charge fees for non-defective returns</p>
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Fee Range</span>
+                    <span className="text-blue-400 font-medium">15-20%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Cost Recovery</span>
+                    <span className="text-white">60-70%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Customer Impact</span>
+                    <span className="text-yellow-400">Low</span>
+                  </div>
+                </div>
+                <button className="w-full mt-4 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg">
+                  Configure Fees
+                </button>
+              </div>
+            </div>
+
+            <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+              <h3 className="text-lg font-bold text-white mb-4">Scenario 3: Hybrid Approach</h3>
+              <div className="space-y-3">
+                <p className="text-white/60 text-sm">Combine pricing and policy changes</p>
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Price Increase</span>
+                    <span className="text-purple-400 font-medium">+5%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Restocking Fee</span>
+                    <span className="text-purple-400">10%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Keep-It Threshold</span>
+                    <span className="text-purple-400">$25</span>
+                  </div>
+                </div>
+                <button className="w-full mt-4 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg">
+                  Recommended
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Product-Specific Recommendations */}
+          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 border border-white/20">
+            <h3 className="text-xl font-bold text-white mb-4">Product-Specific Price Adjustments</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-white/10">
+                  <tr>
+                    <th className="text-left p-3 text-white/60">Product</th>
+                    <th className="text-center p-3 text-white/60">Current Price</th>
+                    <th className="text-center p-3 text-white/60">Return Cost/Unit</th>
+                    <th className="text-center p-3 text-white/60">Recommended Price</th>
+                    <th className="text-center p-3 text-white/60">Increase</th>
+                    <th className="text-center p-3 text-white/60">New Margin</th>
+                    <th className="text-center p-3 text-white/60">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-white/5 hover:bg-white/5">
+                    <td className="p-3 text-white">Example Product</td>
+                    <td className="text-center p-3 text-white">$50.00</td>
+                    <td className="text-center p-3 text-red-400">$3.75</td>
+                    <td className="text-center p-3 text-green-400">$54.50</td>
+                    <td className="text-center p-3 text-yellow-400">+$4.50</td>
+                    <td className="text-center p-3 text-white">40%</td>
+                    <td className="text-center p-3">
+                      <button className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg text-sm">
+                        Apply
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+              <p className="text-blue-400 font-medium mb-2">💡 Pro Tip</p>
+              <p className="text-white/70 text-sm">
+                Start with high-return-rate products first. A 5-10% price increase on your top 20% 
+                most-returned products can recover 60-70% of your total return costs while minimizing 
+                customer impact.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
