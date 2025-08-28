@@ -101,30 +101,50 @@ const Returns = () => {
     const searchOrder = async () => {
       try {
         const response = await fetch(
-          `${API_BASE}/api/v1/orders/search?number=${formData.searchOrderNumber}`
+          `${API_BASE}/api/v1/returns/orders/search?number=${formData.searchOrderNumber}`
         );
         const data = await response.json();
         
-        if (data.order) {
+        if (data.success && data.order) {
           setOrderData(data.order);
-          setFormData({...formData, orderId: data.order.id});
+          setFormData({...formData, orderId: data.order.id, customerEmail: data.order.customerEmail});
           
           // Estimate return cost
           const returnValue = data.order.totalCents;
-          const estimatedCost = (data.order.shippingCostCents || 1200) * 2 + 500; // Rough estimate
+          const shippingCost = data.order.shippingCostCents || 1200;
+          const returnLabelCost = 1500; // $15
+          const processingCost = 500; // $5
+          const estimatedTotalCost = shippingCost + returnLabelCost + processingCost;
           
-          if (estimatedCost > returnValue * 0.5) {
+          if (estimatedTotalCost > returnValue * 0.5) {
             setShowKeepItOffer(true);
           }
           
           setCostEstimate({
             returnValue: returnValue / 100,
-            shippingCost: estimatedCost / 100,
-            keepItRecommended: estimatedCost > returnValue * 0.5
+            originalShipping: shippingCost / 100,
+            returnLabel: returnLabelCost / 100,
+            processing: processingCost / 100,
+            totalCost: estimatedTotalCost / 100,
+            keepItRecommended: estimatedTotalCost > returnValue * 0.5
           });
+          
+          // Pre-select all items
+          const selectedItems = data.order.items.map((item: any) => ({
+            orderItemId: item.id,
+            productId: item.productId || item.product?.id,
+            sku: item.sku,
+            productTitle: item.title,
+            quantityReturned: item.quantity,
+            unitPriceCents: item.priceCents
+          }));
+          setFormData(prev => ({...prev, items: selectedItems}));
+        } else {
+          alert('Order not found');
         }
       } catch (error) {
         console.error('Order search failed:', error);
+        alert('Failed to find order');
       }
     };
 
@@ -201,11 +221,27 @@ const Returns = () => {
                   </div>
                   {costEstimate && (
                     <div className="text-right">
-                      <p className="text-white/60 text-sm">Est. Return Cost</p>
-                      <p className="text-red-400 font-bold text-lg">${costEstimate.shippingCost.toFixed(2)}</p>
-                      {costEstimate.keepItRecommended && (
-                        <span className="text-xs text-yellow-400">High cost!</span>
-                      )}
+                      <p className="text-white/60 text-sm mb-2">Estimated Return Costs:</p>
+                      <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-white/60">Original Shipping:</span>
+                            <span className="text-red-400">-${costEstimate.originalShipping?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-white/60">Return Label:</span>
+                            <span className="text-red-400">-${costEstimate.returnLabel?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-white/60">Processing:</span>
+                            <span className="text-red-400">-${costEstimate.processing?.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold pt-1 border-t border-red-500/30">
+                            <span className="text-white">Total Loss:</span>
+                            <span className="text-red-500">${costEstimate.totalCost?.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
