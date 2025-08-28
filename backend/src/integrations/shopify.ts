@@ -1,4 +1,4 @@
-// backend/src/integrations/shopify.ts - COMPLETE FINAL FIXED VERSION
+// backend/src/integrations/shopify.ts - COMPLETE FIXED VERSION
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -129,60 +129,42 @@ export async function syncShopifyOrders(days = 7) {
   log('info', 'Starting Shopify sync process with FIXED PAGINATION', { 
     days,
     shop: SHOP,
-    hasToken: !!TOKEN,
-    apiVersion: API_VER
+    hasToken: !!TOKEN 
   });
   
   if (!SHOP || !TOKEN) {
-    const error = 'Missing SHOPIFY_SHOP_DOMAIN or SHOPIFY_ADMIN_ACCESS_TOKEN';
+    const error = 'Missing required environment variables: SHOPIFY_SHOP_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN';
     log('error', error);
     throw new Error(error);
   }
 
   try {
-    // Ensure channel exists
     const channel = await ensureShopifyChannel();
-    
-    // Calculate date range with proper timezone handling
-    const endDate = new Date(); // Current time
+    const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(endDate.getDate() - days);
+    startDate.setDate(startDate.getDate() - days);
     
-    const sinceISO = formatDateForQuery(startDate);
-    const untilISO = formatDateForQuery(endDate);
-    
-    log('info', 'Sync date range calculated', {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      startLocal: startDate.toLocaleString(),
-      endLocal: endDate.toLocaleString(),
-      sinceISO,
-      untilISO,
-      daysDiff: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    log('info', 'Sync date range calculated', { 
+      startDate: startDate.toISOString(), 
+      endDate: endDate.toISOString(), 
+      days 
     });
 
-    // FIXED: Corrected GraphQL query - removed invalid fields and fixed variable usage
     const query = `
       query Orders($cursor: String) {
-        orders(first: 100, query: "created_at:>=${sinceISO}", after: $cursor, reverse: true) {
+        orders(first: 100, after: $cursor, sortKey: CREATED_AT, reverse: true) {
           edges {
             cursor
             node {
               id
               name
               createdAt
-              updatedAt
               currencyCode
-              subtotalPriceSet { shopMoney { amount currencyCode } }
-              totalTaxSet { shopMoney { amount currencyCode } }
-              totalShippingPriceSet { shopMoney { amount currencyCode } }
-              totalPriceSet { shopMoney { amount currencyCode } }
-              customer { 
-                id
-                email 
-                firstName
-                lastName
-              }
+              subtotalPriceSet { shopMoney { amount } }
+              totalTaxSet { shopMoney { amount } }
+              totalShippingPriceSet { shopMoney { amount } }
+              totalPriceSet { shopMoney { amount } }
+              customer { email }
               lineItems(first: 250) {
                 edges {
                   node {
@@ -190,16 +172,19 @@ export async function syncShopifyOrders(days = 7) {
                     title
                     sku
                     quantity
-                    originalUnitPriceSet { shopMoney { amount currencyCode } }
-                    discountedTotalSet { shopMoney { amount currencyCode } }
-                    product {
+                    originalUnitPriceSet { shopMoney { amount } }
+                    discountedTotalSet { shopMoney { amount } }
+                    variant {
                       id
-                      handle
+                      sku
+                      product {
+                        id
+                        title
+                      }
                     }
                   }
                 }
               }
-              tags
             }
           }
           pageInfo { 
@@ -210,237 +195,159 @@ export async function syncShopifyOrders(days = 7) {
       }`;
 
     let cursor: string | null = null;
+    let hasNextPage = true;
+    let batchCount = 0;
     let totalOrdersProcessed = 0;
     let totalOrdersCreated = 0;
     let totalOrdersUpdated = 0;
-    let batchCount = 0;
-    let hasNextPage = true;
+    let shouldStop = false;
 
-    // FIXED: Proper pagination loop - continue until no more pages
-    do {
+    while (hasNextPage && !shouldStop) {
       batchCount++;
-      log('info', `Processing batch ${batchCount}`, { cursor: cursor || 'initial' });
+      log('info', `Processing batch ${batchCount}`, { cursor: cursor ? cursor.substring(0, 20) + '...' : 'START' });
       
-      try {
-        const data: any = await shopifyGraphQL<any>(query, { 
-          cursor
-        });
-        
-        const edges = data?.data?.orders?.edges ?? [];
-        const pageInfo: any = data?.data?.orders?.pageInfo;
-        hasNextPage = pageInfo?.hasNextPage || false;
-        const nextCursor = pageInfo?.endCursor;
-        
-        log('info', `Batch ${batchCount} retrieved`, { 
-          ordersCount: edges.length,
-          hasNextPage,
-          nextCursor: nextCursor || 'none',
-          totalSoFar: totalOrdersProcessed
-        });
-
-        if (edges.length === 0) {
-          log('info', `No orders found in batch ${batchCount}`);
-          break;
-        }
-
-        // Process each order in the batch
-        for (const edge of edges) {
-          const order = edge.node;
-          const orderCreatedAt = parseShopifyDate(order.createdAt);
-          const orderUpdatedAt = parseShopifyDate(order.updatedAt);
-          
-          log('info', `Processing order ${order.name}`, {
-            id: order.id,
-            name: order.name,
-            createdAt: order.createdAt,
-            total: order.totalPriceSet.shopMoney.amount,
-            currency: order.currencyCode,
-            lineItemsCount: order.lineItems.edges.length
-          });
-          
-          // Convert currency amounts to cents
-          const toCents = (amountString: string) => {
-            const amount = parseFloat(amountString || '0');
-            if (isNaN(amount)) {
-              log('warn', 'Invalid amount string', { amountString, orderId: order.id });
-              return 0;
-            }
-            return Math.round(amount * 100);
-          };
-
-          const subtotalCents = toCents(order.subtotalPriceSet.shopMoney.amount);
-          const taxCents = toCents(order.totalTaxSet.shopMoney.amount);
-          const shippingCents = toCents(order.totalShippingPriceSet.shopMoney.amount);
-          const totalCents = toCents(order.totalPriceSet.shopMoney.amount);
-
-          try {
-            // Upsert order with enhanced conflict handling
-            const existingOrder = await prisma.order.findUnique({
-              where: { channelRef: order.id }
-            });
-
-            let savedOrder;
-            if (existingOrder) {
-              // Update existing order
-              savedOrder = await prisma.order.update({
-                where: { channelRef: order.id },
-                data: {
-                  number: order.name,
-                  createdAt: orderCreatedAt,
-                  updatedAt: orderUpdatedAt,
-                  currency: order.currencyCode,
-                  subtotalCents,
-                  taxCents,
-                  shippingCents,
-                  totalCents,
-                  customerEmail: order.customer?.email || null,
-                },
-              });
-              totalOrdersUpdated++;
-              log('info', `Updated existing order ${order.name}`, { id: savedOrder.id });
-            } else {
-              // Create new order
-              savedOrder = await prisma.order.create({
-                data: {
-                  channelId: channel.id,
-                  channelRef: order.id,
-                  number: order.name,
-                  createdAt: orderCreatedAt,
-                  updatedAt: orderUpdatedAt,
-                  currency: order.currencyCode,
-                  subtotalCents,
-                  taxCents,
-                  shippingCents,
-                  totalCents,
-                  customerEmail: order.customer?.email || null,
-                },
-              });
-              totalOrdersCreated++;
-              log('info', `Created new order ${order.name}`, { id: savedOrder.id });
-            }
-
-            // Process line items with enhanced error handling
-            const lineItems = order.lineItems.edges;
-            
-            // First, clean up existing line items for updates
-            if (existingOrder) {
-              await prisma.orderItem.deleteMany({
-                where: { orderId: savedOrder.id }
-              });
-            }
-            
-            for (const liEdge of lineItems) {
-              const lineItem = liEdge.node;
-              const unitCents = toCents(lineItem.originalUnitPriceSet.shopMoney.amount);
-              const totalItemCents = toCents(lineItem.discountedTotalSet.shopMoney.amount);
-              const sku = lineItem.sku || undefined;
-
-              // Handle product creation/lookup by SKU
-              let productId: string | undefined;
-              if (sku) {
-                try {
-                  let product = await prisma.product.findUnique({ where: { sku } });
-                  if (!product) {
-                    product = await prisma.product.create({
-                      data: {
-                        channelId: channel.id,
-                        sku,
-                        title: lineItem.title,
-                        channelRef: lineItem.product?.id,
-                        currency: order.currencyCode,
-                        priceCents: unitCents,
-                      },
-                    });
-                  } else {
-                    // Update product info if needed
-                    product = await prisma.product.update({
-                      where: { id: product.id },
-                      data: {
-                        title: lineItem.title,
-                        priceCents: unitCents,
-                        updatedAt: new Date(),
-                      },
-                    });
-                  }
-                  productId = product.id;
-                } catch (productError: any) {
-                  log('error', `Failed to handle product ${sku}`, { 
-                    error: productError.message,
-                    sku,
-                    title: lineItem.title 
-                  });
-                }
-              }
-
-              // Create order item
-              try {
-                await prisma.orderItem.create({
-                  data: {
-                    orderId: savedOrder.id,
-                    productId,
-                    sku,
-                    title: lineItem.title,
-                    quantity: lineItem.quantity,
-                    priceCents: unitCents,
-                    totalCents: totalItemCents,
-                  },
-                });
-              } catch (itemError: any) {
-                log('error', `Failed to create order item`, { 
-                  error: itemError.message,
-                  orderId: savedOrder.id,
-                  title: lineItem.title 
-                });
-              }
-            }
-
-            totalOrdersProcessed++;
-            
-          } catch (dbError: any) {
-            log('error', `Database error processing order ${order.name}`, { 
-              error: dbError.message,
-              code: dbError.code,
-              orderId: order.id 
-            });
-          }
-        }
-        
-        // Update cursor for next page
-        cursor = hasNextPage ? nextCursor : null;
-        
-        log('info', `Batch ${batchCount} completed`, {
-          processedInBatch: edges.length,
-          hasNextPage,
-          nextCursor: cursor || 'none',
-          totalProcessedSoFar: totalOrdersProcessed
-        });
-
-        // Add small delay between batches to respect API limits
-        if (hasNextPage) {
-          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
-        }
-        
-      } catch (batchError: any) {
-        log('error', `Failed to process batch ${batchCount}`, { 
-          error: batchError.message,
-          cursor 
-        });
-        break; // Break on batch errors
+      const data: any = await shopifyGraphQL(query, { cursor });
+      
+      const edges = data?.data?.orders?.edges ?? [];
+      hasNextPage = data?.data?.orders?.pageInfo?.hasNextPage ?? false;
+      cursor = data?.data?.orders?.pageInfo?.endCursor ?? null;
+      
+      log('info', `Batch ${batchCount} received`, { 
+        edgesCount: edges.length, 
+        hasNextPage,
+        nextCursor: cursor ? cursor.substring(0, 20) + '...' : null
+      });
+      
+      if (edges.length === 0) {
+        log('info', 'No more orders in this batch, stopping pagination');
+        break;
       }
       
-    } while (hasNextPage && cursor); // FIXED: Continue while there are more pages
-
-    const endTime = Date.now();
-    const duration = endTime - startTime;
+      for (const edge of edges) {
+        const order = edge.node;
+        const orderDate = parseShopifyDate(order.createdAt);
+        
+        if (orderDate < startDate) {
+          log('info', 'Reached order outside date range, stopping sync', { 
+            orderDate: orderDate.toISOString(), 
+            startDate: startDate.toISOString() 
+          });
+          shouldStop = true;
+          break;
+        }
+        
+        totalOrdersProcessed++;
+        
+        // FIXED: Use compound unique constraint for order lookup
+        const existingOrder = await prisma.order.findUnique({
+          where: {
+            channelId_channelRef: {
+              channelId: channel.id,
+              channelRef: order.id.toString()
+            }
+          }
+        });
+        
+        const orderData = {
+          channelId: channel.id,
+          channelRef: order.id.toString(),
+          number: order.name,
+          createdAt: orderDate,
+          currency: order.currencyCode || 'USD',
+          subtotalCents: Math.round(parseFloat(order.subtotalPriceSet?.shopMoney?.amount || '0') * 100),
+          taxCents: Math.round(parseFloat(order.totalTaxSet?.shopMoney?.amount || '0') * 100),
+          shippingCents: Math.round(parseFloat(order.totalShippingPriceSet?.shopMoney?.amount || '0') * 100),
+          totalCents: Math.round(parseFloat(order.totalPriceSet?.shopMoney?.amount || '0') * 100),
+          customerEmail: order.customer?.email || null,
+        };
+        
+        if (existingOrder) {
+          // FIXED: Use compound unique constraint for order update
+          await prisma.order.update({
+            where: {
+              channelId_channelRef: {
+                channelId: channel.id,
+                channelRef: order.id.toString()
+              }
+            },
+            data: orderData
+          });
+          totalOrdersUpdated++;
+          log('info', `Updated order ${order.name}`);
+        } else {
+          const createdOrder = await prisma.order.create({
+            data: orderData
+          });
+          totalOrdersCreated++;
+          log('info', `Created order ${order.name}`);
+          
+          // Process line items for new orders
+          for (const itemEdge of order.lineItems?.edges || []) {
+            const lineItem = itemEdge.node;
+            
+            // Create or find product first
+            const variant = lineItem.variant;
+            const productSku = variant?.sku || lineItem.sku;
+            
+            if (productSku) {
+              // FIXED: Use compound unique constraint for product lookup
+              const existingProduct = await prisma.product.findUnique({
+                where: {
+                  channelId_sku: {
+                    channelId: channel.id,
+                    sku: productSku
+                  }
+                }
+              });
+              
+              let productId = existingProduct?.id;
+              
+              if (!productId) {
+                const newProduct = await prisma.product.create({
+                  data: {
+                    channelId: channel.id,
+                    sku: productSku,
+                    title: variant?.product?.title || lineItem.title || 'Unknown Product',
+                    active: true
+                  }
+                });
+                productId = newProduct.id;
+                log('info', `Created product: ${productSku}`);
+              }
+              
+              // Create order item
+              await prisma.orderItem.create({
+                data: {
+                  orderId: createdOrder.id,
+                  productId,
+                  sku: productSku,
+                  title: lineItem.title || 'Unknown Item',
+                  quantity: lineItem.quantity || 1,
+                  priceCents: Math.round(parseFloat(lineItem.originalUnitPriceSet?.shopMoney?.amount || '0') * 100),
+                  totalCents: Math.round(parseFloat(lineItem.discountedTotalSet?.shopMoney?.amount || '0') * 100)
+                }
+              });
+            }
+          }
+        }
+      }
+      
+      if (batchCount >= 50) {
+        log('warn', 'Reached maximum batch limit of 50, stopping to prevent infinite loop');
+        break;
+      }
+    }
     
-    log('info', 'Shopify sync completed successfully with FIXED PAGINATION', {
-      totalBatches: batchCount,
+    const endTime = Date.now();
+    const duration = (endTime - startTime) / 1000;
+    
+    log('info', 'Shopify sync completed successfully', {
       totalOrdersProcessed,
       totalOrdersCreated,
       totalOrdersUpdated,
-      durationMs: duration,
-      durationSeconds: Math.round(duration / 1000),
-      averageOrdersPerSecond: Math.round((totalOrdersProcessed / duration) * 1000)
+      totalBatches: batchCount,
+      durationSeconds: duration,
+      ordersPerSecond: Math.round((totalOrdersProcessed / duration) * 1000)
     });
     
     return {
@@ -470,6 +377,7 @@ export async function syncShopifyOrders(days = 7) {
   }
 }
 
+// Additional function for date range sync
 export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date): Promise<void> {
   if (!SHOP || !TOKEN) throw new Error('Missing SHOPIFY_SHOP_DOMAIN or SHOPIFY_ADMIN_ACCESS_TOKEN');
 
@@ -479,7 +387,6 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
   const startISO = startDate.toISOString();
   const endISO = endDate.toISOString();
   
-  // FIXED: Simple query with embedded date values
   const query = `
     query Orders($cursor: String) {
       orders(first: 100, query: "created_at:>=${startISO} AND created_at:<=${endISO}", after: $cursor, reverse: true) {
@@ -497,7 +404,15 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
                 node {
                   id title sku quantity
                   originalUnitPriceSet { shopMoney { amount } }
-                  discountedTotalSet   { shopMoney { amount } }
+                  discountedTotalSet { shopMoney { amount } }
+                  variant {
+                    id
+                    sku
+                    product {
+                      id
+                      title
+                    }
+                  }
                 }
               }
             }
@@ -513,114 +428,82 @@ export async function syncShopifyOrdersDateRange(startDate: Date, endDate: Date)
 
   console.log(`📅 Syncing orders from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
 
-  // FIXED: Proper pagination for date range sync
   do {
-    const data: any = await shopifyGraphQL(query, {
-      cursor
-    });
+    const data: any = await shopifyGraphQL(query, { cursor });
 
     const edges = data?.data?.orders?.edges ?? [];
-    const pageInfo: any = data?.data?.orders?.pageInfo;
-    hasNextPage = pageInfo?.hasNextPage || false;
-    
-    console.log(`📦 Found ${edges.length} orders in this batch`);
-    
-    for (const e of edges) {
-      const o = e.node;
-      const toCents = (s: string) => Math.round(parseFloat(s || "0") * 100);
+    hasNextPage = data?.data?.orders?.pageInfo?.hasNextPage ?? false;
+    cursor = data?.data?.orders?.pageInfo?.endCursor ?? null;
 
-      const subtotal = toCents(o.subtotalPriceSet.shopMoney.amount);
-      const tax = toCents(o.totalTaxSet.shopMoney.amount);
-      const ship = toCents(o.totalShippingPriceSet.shopMoney.amount);
-      const total = toCents(o.totalPriceSet.shopMoney.amount);
-
-      console.log(`📦 Processing order: ${o.name} from ${o.createdAt} - $${total/100}`);
-
-      // Upsert order
-      const order = await prisma.order.upsert({
-        where: { channelRef: o.id },
+    for (const edge of edges) {
+      const order = edge.node;
+      
+      // FIXED: Use compound unique constraint for upsert
+      await prisma.order.upsert({
+        where: {
+          channelId_channelRef: {
+            channelId: channel.id,
+            channelRef: order.id.toString()
+          }
+        },
         update: {
-          number: o.name,
-          createdAt: new Date(o.createdAt),
-          currency: o.currencyCode,
-          subtotalCents: subtotal,
-          taxCents: tax,
-          shippingCents: ship,
-          totalCents: total,
-          customerEmail: o.customer?.email ?? null,
+          number: order.name,
+          createdAt: new Date(order.createdAt),
+          currency: order.currencyCode,
+          subtotalCents: Math.round(parseFloat(order.subtotalPriceSet?.shopMoney?.amount || '0') * 100),
+          taxCents: Math.round(parseFloat(order.totalTaxSet?.shopMoney?.amount || '0') * 100),
+          shippingCents: Math.round(parseFloat(order.totalShippingPriceSet?.shopMoney?.amount || '0') * 100),
+          totalCents: Math.round(parseFloat(order.totalPriceSet?.shopMoney?.amount || '0') * 100),
+          customerEmail: order.customer?.email || null,
         },
         create: {
           channelId: channel.id,
-          channelRef: o.id,
-          number: o.name,
-          createdAt: new Date(o.createdAt),
-          currency: o.currencyCode,
-          subtotalCents: subtotal,
-          taxCents: tax,
-          shippingCents: ship,
-          totalCents: total,
-          customerEmail: o.customer?.email ?? null,
+          channelRef: order.id.toString(),
+          number: order.name,
+          createdAt: new Date(order.createdAt),
+          currency: order.currencyCode,
+          subtotalCents: Math.round(parseFloat(order.subtotalPriceSet?.shopMoney?.amount || '0') * 100),
+          taxCents: Math.round(parseFloat(order.totalTaxSet?.shopMoney?.amount || '0') * 100),
+          shippingCents: Math.round(parseFloat(order.totalShippingPriceSet?.shopMoney?.amount || '0') * 100),
+          totalCents: Math.round(parseFloat(order.totalPriceSet?.shopMoney?.amount || '0') * 100),
+          customerEmail: order.customer?.email || null,
         },
       });
 
       // Process line items
-      for (const liEdge of o.lineItems.edges) {
-        const li = liEdge.node;
-        const unit = toCents(li.originalUnitPriceSet.shopMoney.amount);
-        const line = toCents(li.discountedTotalSet.shopMoney.amount);
-        const sku = li.sku || undefined;
-
-        // Handle product
-        let productId: string | undefined;
-        if (sku) {
-          let product = await prisma.product.findUnique({ where: { sku } });
+      for (const itemEdge of order.lineItems?.edges || []) {
+        const lineItem = itemEdge.node;
+        const productSku = lineItem.variant?.sku || lineItem.sku;
+        
+        if (productSku) {
+          // FIXED: Use compound unique constraint for product lookup
+          const product = await prisma.product.findUnique({
+            where: {
+              channelId_sku: {
+                channelId: channel.id,
+                sku: productSku
+              }
+            }
+          });
+          
           if (!product) {
-            product = await prisma.product.create({
+            await prisma.product.create({
               data: {
                 channelId: channel.id,
-                sku,
-                title: li.title,
-                currency: o.currencyCode,
-              },
+                sku: productSku,
+                title: lineItem.variant?.product?.title || lineItem.title || 'Unknown Product',
+                active: true
+              }
             });
           }
-          productId = product.id;
-        }
-
-        // Check if order item already exists to avoid duplicates
-        const existingItem = await prisma.orderItem.findFirst({
-          where: {
-            orderId: order.id,
-            sku: sku || undefined,
-            title: li.title,
-          },
-        });
-
-        if (!existingItem) {
-          await prisma.orderItem.create({
-            data: {
-              orderId: order.id,
-              productId,
-              sku,
-              title: li.title,
-              quantity: li.quantity,
-              priceCents: unit,
-              totalCents: line,
-            },
-          });
         }
       }
-      
+
       orderCount++;
     }
 
-    cursor = hasNextPage ? pageInfo?.endCursor : null;
-    
-    // Add delay between requests
-    if (hasNextPage) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-  } while (hasNextPage && cursor);
+    console.log(`📋 Processed ${orderCount} orders so far...`);
+  } while (hasNextPage);
 
-  console.log(`✅ Synced ${orderCount} orders for date range`);
+  console.log(`✅ Completed: ${orderCount} orders synced`);
 }
