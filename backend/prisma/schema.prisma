@@ -1,5 +1,4 @@
-// This is the COMPLETE schema.prisma file
-// Replace your entire backend/prisma/schema.prisma with this:
+// backend/prisma/schema.prisma - COMPLETE FILE WITH LOWERCASE TABLE MAPPING
 
 generator client {
   provider = "prisma-client-js"
@@ -21,6 +20,8 @@ model Channel {
   products  Product[]
   inventory Inventory[]
   returns   Return[]
+  
+  @@map("channels")
 }
 
 model Product {
@@ -64,6 +65,7 @@ model Product {
   @@unique([channelId, sku])
   @@index([sku])
   @@index([channelId])
+  @@map("products")
 }
 
 model Order {
@@ -92,6 +94,7 @@ model Order {
   @@unique([channelId, channelRef])
   @@index([channelRef])
   @@index([createdAt])
+  @@map("orders")
 }
 
 model OrderItem {
@@ -111,6 +114,7 @@ model OrderItem {
   
   @@index([orderId])
   @@index([productId])
+  @@map("order_items")
 }
 
 model Inventory {
@@ -134,6 +138,7 @@ model Inventory {
   
   @@index([productId])
   @@index([channelId])
+  @@map("inventory")
 }
 
 model Return {
@@ -172,45 +177,47 @@ model Return {
   @@index([channelId])
   @@index([status])
   @@index([createdAt])
+  @@map("returns")
 }
 
 model ReturnItem {
-  id                String      @id @default(cuid())
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  returnId          String
-  return            Return      @relation(fields: [returnId], references: [id])
-  orderItemId       String?
-  orderItem         OrderItem?  @relation(fields: [orderItemId], references: [id])
-  productId         String?
-  product           Product?    @relation(fields: [productId], references: [id])
-  sku               String
-  productTitle      String
-  quantityReturned  Int
-  quantityRestockable Int       @default(0)
-  quantityDamaged   Int         @default(0)
-  unitPriceCents    Int
-  totalValueCents   Int
-  reasonCategory    String
-  reasonDetail      String?     @db.Text
-  batchNumber       String?
-  condition         String      @default("pending_inspection")
+  id                  String      @id @default(cuid())
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  returnId            String
+  return              Return      @relation(fields: [returnId], references: [id])
+  orderItemId         String?
+  orderItem           OrderItem?  @relation(fields: [orderItemId], references: [id])
+  productId           String?
+  product             Product?    @relation(fields: [productId], references: [id])
+  sku                 String
+  productTitle        String
+  quantityReturned    Int
+  quantityRestockable Int         @default(0)
+  quantityDamaged     Int         @default(0)
+  unitPriceCents      Int
+  totalValueCents     Int
+  reasonCategory      String
+  reasonDetail        String?     @db.Text
+  batchNumber         String?
+  condition           String      @default("pending_inspection")
   
   // Enhanced Tracking Fields
-  originalCondition String?     @default("new")
-  inspectedCondition String?
-  resaleValueCents  Int?
-  resaleChannel     String?
-  inspectionNotes   String?     @db.Text
-  disposalRequired  Boolean     @default(false)
-  supplierDefect    Boolean     @default(false)
+  originalCondition   String?     @default("new")
+  inspectedCondition  String?
+  resaleValueCents    Int?
+  resaleChannel       String?
+  inspectionNotes     String?     @db.Text
+  disposalRequired    Boolean     @default(false)
+  supplierDefect      Boolean     @default(false)
   
   // Product condition fields for return log
-  productCondition  String?     @default("100")
-  conditionNotes    String?     @db.Text
+  productCondition    String?     @default("100")
+  conditionNotes      String?     @db.Text
   
   @@index([returnId])
   @@index([productId])
+  @@map("return_items")
 }
 
 model ProductReturnMetrics {
@@ -247,6 +254,7 @@ model ProductReturnMetrics {
   
   @@unique([productId, periodStart, periodEnd])
   @@index([productId])
+  @@map("product_return_metrics")
 }
 
 model BatchReturnAnalysis {
@@ -274,6 +282,7 @@ model BatchReturnAnalysis {
   
   @@index([batchNumber])
   @@index([productId])
+  @@map("batch_return_analysis")
 }
 
 model ReturnCostConfig {
@@ -285,6 +294,7 @@ model ReturnCostConfig {
   notes         String?  @db.Text
   
   @@unique([configType, configKey])
+  @@map("return_cost_config")
 }
 
 model ScheduledJob {
@@ -305,6 +315,7 @@ model ScheduledJob {
   
   @@index([enabled, nextRun])
   @@index([type])
+  @@map("scheduled_jobs")
 }
 
 model JobExecution {
@@ -321,4 +332,5 @@ model JobExecution {
   @@index([jobId])
   @@index([status])
   @@index([startedAt])
+  @@map("job_executions")
 }
