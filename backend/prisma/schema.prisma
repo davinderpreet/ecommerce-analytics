@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma - EXACT MATCH TO YOUR DATABASE
+// backend/prisma/schema.prisma - FINAL FIXED VERSION
 
 generator client {
   provider = "prisma-client-js"
@@ -10,11 +10,11 @@ datasource db {
 }
 
 model Channel {
-  id        String   @id
+  id        String   @id @default(cuid())
   name      String
   code      String   @unique
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
   
   orders    Order[]
   products  Product[]
@@ -23,7 +23,7 @@ model Channel {
 }
 
 model Product {
-  id                String    @id
+  id                String    @id @default(cuid())
   channelId         String
   channel           Channel   @relation(fields: [channelId], references: [id])
   channelRef        String?
@@ -33,7 +33,7 @@ model Product {
   priceCents        Int?
   currency          String?
   createdAt         DateTime  @default(now())
-  updatedAt         DateTime
+  updatedAt         DateTime  @updatedAt
   
   // Inventory fields from your DB
   leadTimeDays      Int?      @default(30)
@@ -55,17 +55,17 @@ model Product {
 }
 
 model Order {
-  id            String    @id
+  id            String    @id @default(cuid())
   channelId     String
   channel       Channel   @relation(fields: [channelId], references: [id])
   channelRef    String
   number        String?
-  createdAt     DateTime
-  updatedAt     DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   currency      String
   subtotalCents Int
   taxCents      Int
-  shippingCents Int       // Note: NOT shippingCostCents
+  shippingCents Int
   totalCents    Int
   customerEmail String?
   
@@ -79,7 +79,7 @@ model Order {
 }
 
 model OrderItem {
-  id          String   @id
+  id          String   @id @default(cuid())
   orderId     String
   order       Order    @relation(fields: [orderId], references: [id])
   productId   String?
@@ -98,25 +98,25 @@ model OrderItem {
 }
 
 model Inventory {
-  id                  String    @id
+  id                  String    @id @default(cuid())
   productId           String    @unique
   product             Product   @relation(fields: [productId], references: [id])
   quantity            Int       @default(0)
-  updatedAt           DateTime
+  updatedAt           DateTime  @updatedAt
   createdAt           DateTime  @default(now())
   
-  // Snake case columns from your DB
-  available_quantity  Int?      @default(0) @map("available_quantity")
-  reserved_quantity   Int?      @default(0) @map("reserved_quantity")
-  incoming_quantity   Int?      @default(0) @map("incoming_quantity")
-  reorder_point       Int?      @default(20) @map("reorder_point")
-  reorder_quantity    Int?      @default(100) @map("reorder_quantity")
-  lead_time_days      Int?      @default(7) @map("lead_time_days")
-  safety_stock        Int?      @default(10) @map("safety_stock")
-  last_restock_date   DateTime? @map("last_restock_date")
-  next_restock_date   DateTime? @map("next_restock_date")
-  min_order_quantity  Int?      @default(1) @map("min_order_quantity")
-  max_stock_level     Int?      @map("max_stock_level")
+  // Map snake_case DB columns to camelCase for easier use in code
+  available           Int?      @default(0) @map("available_quantity")
+  reserved            Int?      @default(0) @map("reserved_quantity")
+  incoming            Int?      @default(0) @map("incoming_quantity")
+  reorderPoint        Int?      @default(20) @map("reorder_point")
+  reorderQuantity     Int?      @default(100) @map("reorder_quantity")
+  leadTimeDays        Int?      @default(7) @map("lead_time_days")
+  safetyStock         Int?      @default(10) @map("safety_stock")
+  lastRestockDate     DateTime? @map("last_restock_date")
+  nextRestockDate     DateTime? @map("next_restock_date")
+  minOrderQuantity    Int?      @default(1) @map("min_order_quantity")
+  maxStockLevel       Int?      @map("max_stock_level")
   notes               String?
   
   @@index([productId])
@@ -124,7 +124,7 @@ model Inventory {
 }
 
 model Return {
-  id                       String      @id
+  id                       String      @id @default(cuid())
   returnNumber             String      @unique
   orderId                  String
   order                    Order       @relation(fields: [orderId], references: [id])
@@ -151,7 +151,7 @@ model Return {
 }
 
 model ReturnItem {
-  id                  String      @id
+  id                  String      @id @default(cuid())
   returnId            String
   return              Return      @relation(fields: [returnId], references: [id])
   orderItemId         String?
@@ -178,15 +178,19 @@ model ReturnItem {
   resolvedAt          DateTime?
   createdAt           DateTime    @default(now())
   
+  // Add these if they're in your code but not DB
+  productCondition    String?     @default("100")
+  conditionNotes      String?
+  
   @@index([returnId])
   @@index([productId])
   @@map("return_items")
 }
 
-// Additional tables from your DB that weren't in the schema
+// Additional tables from your DB
 
 model DailyMetrics {
-  id            String   @id
+  id            String   @id @default(cuid())
   date          DateTime
   channelId     String
   revenueCents  Int
@@ -200,11 +204,11 @@ model DailyMetrics {
 }
 
 model User {
-  id          String   @id
+  id          String   @id @default(cuid())
   email       String   @unique
   companyName String?
   createdAt   DateTime @default(now())
-  updatedAt   DateTime
+  updatedAt   DateTime @updatedAt
   
   @@map("users")
 }
@@ -213,23 +217,23 @@ model Supplier {
   id            String   @id @default(cuid())
   name          String
   code          String?
-  contact_name  String?  @map("contact_name")
+  contactName   String?  @map("contact_name")
   email         String?
   phone         String?
   address       String?
   website       String?
-  lead_time_days Int?    @default(7) @map("lead_time_days")
-  payment_terms  String? @map("payment_terms")
+  leadTimeDays  Int?     @default(7) @map("lead_time_days")
+  paymentTerms  String?  @map("payment_terms")
   notes         String?
-  is_active     Boolean @default(true) @map("is_active")
-  created_at    DateTime @default(now()) @map("created_at")
-  updated_at    DateTime @default(now()) @map("updated_at")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
   
   @@map("suppliers")
 }
 
 model Predictions {
-  id               String   @id
+  id               String   @id @default(cuid())
   date             DateTime
   predictedRevenue Int
   confidence       Float
