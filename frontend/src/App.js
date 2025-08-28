@@ -57,6 +57,7 @@ function App() {
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/performance" element={<ProductPerformance />} />
           <Route path="/returns" element={<Returns />} />
+          <Route path="/return-log" element={<ReturnLog />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
