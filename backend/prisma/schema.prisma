@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma - Complete with Returns Module
+// prisma/schema.prisma - COMPLETE FILE WITH RETURN COST TRACKING
 
 generator client {
   provider = "prisma-client-js"
@@ -9,218 +9,305 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --------- Core entities ----------
-
 model Channel {
-  id           String        @id @default(cuid())
-  name         String
-  code         String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  // Relations
-  products     Product[]
-  orders       Order[]
-  dailyMetrics DailyMetric[]
-  returns      Return[]      // ✓ Already added
-
-  @@map("channels")
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  orders    Order[]
+  products  Product[]
+  inventory Inventory[]
+  returns   Return[]
 }
 
 model Product {
-  id         String    @id @default(cuid())
-  channelId  String
-  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelRef String?
-  sku        String    @unique
-  title      String
-  active     Boolean   @default(true)
-  priceCents Int?
-  currency   String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  // Inventory management fields
-  leadTimeDays    Int?      @default(30)
-  moq             Int?      @default(100)
-  batchSize       Int?      @default(50)
-  safetyStockDays Int?      @default(14)
-  supplierName    String?
-  supplierCountry String?   @default("China")
-  shippingMethod  String?   @default("Sea")
-
-  // Relations
-  inventory   Inventory?
-  orderItems  OrderItem[]
-  returnItems ReturnItem[]  // ✓ Already added
-
-  @@map("products")
-}
-
-model Inventory {
-  id         String   @id @default(cuid())
-  productId  String   @unique
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity   Int      @default(0)
-  updatedAt  DateTime @updatedAt
-  createdAt  DateTime @default(now())
-
-  @@map("inventory")
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  channelRef    String?
+  channelId     String
+  channel       Channel   @relation(fields: [channelId], references: [id])
+  currency      String?
+  sku           String
+  title         String
+  active        Boolean   @default(true)
+  priceCents    Int?
+  costCents     Int?
+  comparePriceCents Int?
+  inventory     Inventory?
+  orderItems    OrderItem[]
+  returnItems   ReturnItem[]
+  returnMetrics ProductReturnMetrics[]
+  batchAnalysis BatchReturnAnalysis[]
+  
+  // Additional fields
+  weight        Float?
+  dimensions    String?
+  category      String?
+  brand         String?
+  supplier      String?
+  batchNumber   String?
+  shippingClass String?
+  shippingMethod String?
+  
+  @@unique([channelId, sku])
+  @@index([sku])
+  @@index([channelId])
 }
 
 model Order {
-  id            String    @id @default(cuid())
-  channelId     String
-  channel       Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  channelRef    String    @unique
-  number        String?
-  createdAt     DateTime
-  updatedAt     DateTime  @updatedAt
-  currency      String
-  subtotalCents Int
-  taxCents      Int
-  shippingCents Int
-  totalCents    Int
-  customerEmail String?
-
-  items         OrderItem[]
-  returns       Return[]     // ← ADD THIS LINE (was missing)
-
+  id               String    @id @default(cuid())
+  number           String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  channelRef       String
+  channelId        String
+  channel          Channel   @relation(fields: [channelId], references: [id])
+  currency         String
+  subtotalCents    Int
+  taxCents         Int
+  shippingCents    Int
+  shippingCostCents Int?     @default(0)  // What we actually paid to ship (NEW)
+  totalCents       Int
+  customerEmail    String?
+  items            OrderItem[]
+  returns          Return[]
+  
+  // Additional fields for better tracking
+  shippingZone     String?
+  shippingCarrier  String?
+  shippingWeight   Float?
+  
+  @@unique([channelId, channelRef])
+  @@index([channelRef])
   @@index([createdAt])
-  @@map("orders")
 }
 
 model OrderItem {
-  id         String   @id @default(cuid())
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId  String?
-  product    Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sku        String?
-  title      String
-  quantity   Int
-  priceCents Int
-  totalCents Int
-  
-  returnItems ReturnItem[]  // ← ADD THIS LINE (was missing)
-
-  @@map("order_items")
-}
-
-model DailyMetric {
   id            String   @id @default(cuid())
-  date          DateTime @db.Date
-  channelId     String
-  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  revenueCents  Int
-  orders        Int
-  visitors      Int?
-  conversionPct Float?
-  aovCents      Int?
-
-  @@unique([date, channelId])
-  @@map("daily_metrics")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id])
+  sku           String
+  title         String
+  quantity      Int
+  priceCents    Int
+  totalCents    Int
+  returnItems   ReturnItem[]
+  
+  @@index([orderId])
+  @@index([productId])
 }
 
-model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  companyName String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("users")
+model Inventory {
+  id                  String    @id @default(cuid())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  productId           String    @unique
+  product             Product   @relation(fields: [productId], references: [id])
+  channelId           String
+  channel             Channel   @relation(fields: [channelId], references: [id])
+  quantity            Int       @default(0)
+  reserved            Int       @default(0)
+  available           Int       @default(0)
+  reorderPoint        Int       @default(10)
+  reorderQuantity     Int       @default(50)
+  lastRestockDate     DateTime?
+  nextRestockDate     DateTime?
+  averageDailySales   Float?
+  leadTimeDays        Int       @default(7)
+  safetyStockDays     Int       @default(3)
+  
+  @@index([productId])
+  @@index([channelId])
 }
-
-model Prediction {
-  id               String   @id @default(cuid())
-  date             DateTime @db.Date
-  predictedRevenue Int
-  confidence       Float
-  modelType        String
-  modelVersion     String?
-  actualRevenue    Int?
-  createdAt        DateTime @default(now())
-
-  @@map("predictions")
-}
-
-// --------- Returns Management Module ----------
 
 model Return {
-  id                      String    @id @default(cuid())
-  returnNumber            String    @unique
-  orderId                 String
-  order                   Order     @relation(fields: [orderId], references: [id])
-  channelId               String
-  channel                 Channel   @relation(fields: [channelId], references: [id])
-  customerEmail           String?
-  status                  String    @default("pending")
-  totalReturnValueCents   Int       @default(0)
-  refundAmountCents       Int?
-  restockingFeeCents      Int       @default(0)
-  returnShippingCostCents Int       @default(0)
-  createdAt               DateTime  @default(now())
-  approvedAt              DateTime?
-  completedAt             DateTime?
-  createdBy               String?
-  approvedBy              String?
-  notes                   String?
+  id                        String      @id @default(cuid())
+  returnNumber              String      @unique
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+  orderId                   String
+  order                     Order       @relation(fields: [orderId], references: [id])
+  channelId                 String
+  channel                   Channel     @relation(fields: [channelId], references: [id])
+  customerEmail             String
+  status                    String      @default("pending") // pending, approved, rejected, received, inspected, completed
+  totalReturnValueCents     Int
+  refundAmountCents         Int?
+  restockingFeeCents        Int?        @default(0)
+  notes                     String?     @db.Text
+  createdBy                 String
+  approvedAt                DateTime?
+  approvedBy                String?
+  completedAt               DateTime?
+  items                     ReturnItem[]
   
-  items                   ReturnItem[]
+  // Cost Tracking Fields (NEW)
+  returnLabelCostCents      Int?        @default(0)    // Cost of return shipping label
+  processingCostCents       Int?        @default(500)  // Labor/handling cost (default $5)
+  paymentProcessingFeeCents Int?        @default(0)    // Credit card refund fees
+  productValueLossCents     Int?        @default(0)    // Loss from product condition
+  totalActualLossCents      Int?        @default(0)    // Total calculated loss
+  keepItRefund              Boolean     @default(false) // Whether keep-it was recommended
+  supplierChargebackCents   Int?        @default(0)    // Amount to charge supplier
+  returnDecisionReason      String?                     // Why approved/rejected
   
-  @@index([status])
   @@index([orderId])
+  @@index([channelId])
+  @@index([status])
   @@index([createdAt])
-  @@map("returns")
 }
 
 model ReturnItem {
-  id                String    @id @default(cuid())
+  id                String      @id @default(cuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
   returnId          String
-  return            Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  return            Return      @relation(fields: [returnId], references: [id])
   orderItemId       String?
-  orderItem         OrderItem? @relation(fields: [orderItemId], references: [id])
+  orderItem         OrderItem?  @relation(fields: [orderItemId], references: [id])
   productId         String?
-  product           Product?  @relation(fields: [productId], references: [id])
+  product           Product?    @relation(fields: [productId], references: [id])
   sku               String
   productTitle      String
   quantityReturned  Int
-  quantityRestockable Int     @default(0)
-  quantityDamaged   Int       @default(0)
+  quantityRestockable Int       @default(0)
+  quantityDamaged   Int         @default(0)
   unitPriceCents    Int
   totalValueCents   Int
-  reasonCategory    String
-  reasonDetail      String?
+  reasonCategory    String      // defective, not_as_described, changed_mind, damaged_in_shipping, wrong_item, other
+  reasonDetail      String?     @db.Text
   batchNumber       String?
-  manufactureDate   DateTime?
-  condition         String?
-  inspectionNotes   String?
-  inspectedBy       String?
-  inspectedAt       DateTime?
-  resolution        String?
-  resolutionNotes   String?
-  resolvedAt        DateTime?
-  createdAt         DateTime  @default(now())
+  condition         String      @default("pending_inspection")
   
-  @@index([sku])
-  @@index([batchNumber])
-  @@index([reasonCategory])
-  @@map("return_items")
+  // Enhanced Tracking Fields (NEW)
+  originalCondition String?     @default("new")     // Condition when sold
+  inspectedCondition String?                        // Actual return condition
+  resaleValueCents  Int?                           // What we can resell for
+  resaleChannel     String?                         // 'new', 'open-box', 'refurbished', 'clearance', 'scrap'
+  inspectionNotes   String?     @db.Text           // Inspector notes
+  disposalRequired  Boolean     @default(false)    // Needs disposal
+  supplierDefect    Boolean     @default(false)    // Is this a supplier issue
+  
+  @@index([returnId])
+  @@index([productId])
 }
 
-model ReturnReason {
-  id                String   @id @default(cuid())
-  category          String
-  code              String   @unique
-  description       String
-  requiresInspection Boolean @default(false)
-  autoApprove       Boolean @default(false)
-  isQualityIssue    Boolean @default(false)
-  isSupplierFault   Boolean @default(false)
-  sortOrder         Int      @default(0)
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
+// NEW MODELS FOR COST TRACKING
+
+model ProductReturnMetrics {
+  id                        String   @id @default(cuid())
+  productId                 String
+  product                   Product  @relation(fields: [productId], references: [id])
+  periodStart               DateTime
+  periodEnd                 DateTime
   
-  @@map("return_reasons")
+  // Sales & Return Volumes
+  unitsSold                 Int      @default(0)
+  unitsReturned             Int      @default(0)
+  returnRate                Float    @default(0)  // 0.0000 to 1.0000
+  
+  // Cost Analysis
+  totalReturnCostsCents     Int      @default(0)
+  avgReturnCostCents        Int      @default(0)
+  costPerUnitSoldCents      Int      @default(0)  // Spread return costs across all units
+  
+  // Pricing Impact
+  currentPriceCents         Int?
+  recommendedPriceCents     Int?     // Price with return costs built in
+  marginImpactCents         Int?     // How much returns eat into margin
+  
+  // Return Reason Breakdown
+  defectReturns             Int      @default(0)
+  customerRemorseReturns    Int      @default(0)
+  notAsDescribedReturns     Int      @default(0)
+  damagedInShippingReturns  Int      @default(0)
+  otherReturns              Int      @default(0)
+  
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  
+  @@unique([productId, periodStart, periodEnd])
+  @@index([productId])
+}
+
+model BatchReturnAnalysis {
+  id                    String    @id @default(cuid())
+  batchNumber           String
+  supplierId            String?
+  productId             String
+  product               Product   @relation(fields: [productId], references: [id])
+  
+  // Quality Metrics
+  totalUnits            Int       @default(0)
+  defectiveUnits        Int       @default(0)
+  defectRate            Float     @default(0)
+  expectedDefectRate    Float     @default(0.02)  // 2% baseline
+  excessDefects         Int       @default(0)
+  
+  // Financial Impact
+  extraReturnCostsCents Int       @default(0)
+  chargebackAmountCents Int       @default(0)
+  chargebackStatus      String?   // 'pending', 'approved', 'disputed', 'collected'
+  chargebackDate        DateTime?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([batchNumber])
+  @@index([productId])
+}
+
+model ReturnCostConfig {
+  id            String   @id @default(cuid())
+  configType    String   // 'shipping', 'processing', 'restocking'
+  configKey     String   // e.g., 'zone_1_cost', 'electronics_fee_percent'
+  configValue   Float
+  effectiveDate DateTime @default(now())
+  notes         String?  @db.Text
+  
+  @@unique([configType, configKey])
+}
+
+// Scheduler Models (keeping existing)
+model ScheduledJob {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  type          String   // 'shopify_sync', 'inventory_check', 'report_generation'
+  schedule      String   // Cron expression
+  enabled       Boolean  @default(true)
+  lastRun       DateTime?
+  nextRun       DateTime?
+  status        String   @default("idle") // 'idle', 'running', 'failed'
+  lastError     String?  @db.Text
+  config        Json?    // Job-specific configuration
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  executions    JobExecution[]
+  
+  @@index([enabled, nextRun])
+  @@index([type])
+}
+
+model JobExecution {
+  id            String       @id @default(cuid())
+  jobId         String
+  job           ScheduledJob @relation(fields: [jobId], references: [id])
+  startedAt     DateTime     @default(now())
+  completedAt   DateTime?
+  status        String       // 'running', 'completed', 'failed'
+  recordsProcessed Int?
+  error         String?      @db.Text
+  logs          Json?        // Detailed execution logs
+  
+  @@index([jobId])
+  @@index([status])
+  @@index([startedAt])
 }
