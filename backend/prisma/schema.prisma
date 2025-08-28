@@ -1,5 +1,27 @@
-// This is the COMPLETE Product model with ALL required fields
-// Replace your current Product model in schema.prisma with this:
+// This is the COMPLETE schema.prisma file
+// Replace your entire backend/prisma/schema.prisma with this:
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Channel {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  orders    Order[]
+  products  Product[]
+  inventory Inventory[]
+  returns   Return[]
+}
 
 model Product {
   id                String    @id @default(cuid())
@@ -21,7 +43,7 @@ model Product {
   returnMetrics     ProductReturnMetrics[]
   batchAnalysis     BatchReturnAnalysis[]
   
-  // Inventory Management Fields (THESE WERE MISSING!)
+  // Inventory Management Fields
   leadTimeDays      Int?      @default(30)
   moq               Int?      @default(100)
   batchSize         Int?      @default(50)
@@ -42,4 +64,261 @@ model Product {
   @@unique([channelId, sku])
   @@index([sku])
   @@index([channelId])
+}
+
+model Order {
+  id                String    @id @default(cuid())
+  number            String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  channelRef        String
+  channelId         String
+  channel           Channel   @relation(fields: [channelId], references: [id])
+  currency          String
+  subtotalCents     Int
+  taxCents          Int
+  shippingCents     Int
+  shippingCostCents Int?      @default(0)
+  totalCents        Int
+  customerEmail     String?
+  items             OrderItem[]
+  returns           Return[]
+  
+  // Additional fields for better tracking
+  shippingZone      String?
+  shippingCarrier   String?
+  shippingWeight    Float?
+  
+  @@unique([channelId, channelRef])
+  @@index([channelRef])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id])
+  sku           String
+  title         String
+  quantity      Int
+  priceCents    Int
+  totalCents    Int
+  returnItems   ReturnItem[]
+  
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Inventory {
+  id                  String    @id @default(cuid())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  productId           String    @unique
+  product             Product   @relation(fields: [productId], references: [id])
+  channelId           String
+  channel             Channel   @relation(fields: [channelId], references: [id])
+  quantity            Int       @default(0)
+  reserved            Int       @default(0)
+  available           Int       @default(0)
+  reorderPoint        Int       @default(10)
+  reorderQuantity     Int       @default(50)
+  lastRestockDate     DateTime?
+  nextRestockDate     DateTime?
+  averageDailySales   Float?
+  leadTimeDays        Int       @default(7)
+  safetyStockDays     Int       @default(3)
+  
+  @@index([productId])
+  @@index([channelId])
+}
+
+model Return {
+  id                        String      @id @default(cuid())
+  returnNumber              String      @unique
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+  orderId                   String
+  order                     Order       @relation(fields: [orderId], references: [id])
+  channelId                 String
+  channel                   Channel     @relation(fields: [channelId], references: [id])
+  customerEmail             String
+  status                    String      @default("pending")
+  totalReturnValueCents     Int
+  refundAmountCents         Int?
+  restockingFeeCents        Int?        @default(0)
+  notes                     String?     @db.Text
+  createdBy                 String
+  approvedAt                DateTime?
+  approvedBy                String?
+  completedAt               DateTime?
+  items                     ReturnItem[]
+  
+  // Cost Tracking Fields
+  shippingCostCents         Int?        @default(0)
+  returnLabelCostCents      Int?        @default(0)
+  processingCostCents       Int?        @default(500)
+  paymentProcessingFeeCents Int?        @default(0)
+  productValueLossCents     Int?        @default(0)
+  totalActualLossCents      Int?        @default(0)
+  keepItRefund              Boolean     @default(false)
+  supplierChargebackCents   Int?        @default(0)
+  returnDecisionReason      String?
+  
+  @@index([orderId])
+  @@index([channelId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ReturnItem {
+  id                String      @id @default(cuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  returnId          String
+  return            Return      @relation(fields: [returnId], references: [id])
+  orderItemId       String?
+  orderItem         OrderItem?  @relation(fields: [orderItemId], references: [id])
+  productId         String?
+  product           Product?    @relation(fields: [productId], references: [id])
+  sku               String
+  productTitle      String
+  quantityReturned  Int
+  quantityRestockable Int       @default(0)
+  quantityDamaged   Int         @default(0)
+  unitPriceCents    Int
+  totalValueCents   Int
+  reasonCategory    String
+  reasonDetail      String?     @db.Text
+  batchNumber       String?
+  condition         String      @default("pending_inspection")
+  
+  // Enhanced Tracking Fields
+  originalCondition String?     @default("new")
+  inspectedCondition String?
+  resaleValueCents  Int?
+  resaleChannel     String?
+  inspectionNotes   String?     @db.Text
+  disposalRequired  Boolean     @default(false)
+  supplierDefect    Boolean     @default(false)
+  
+  // Product condition fields for return log
+  productCondition  String?     @default("100")
+  conditionNotes    String?     @db.Text
+  
+  @@index([returnId])
+  @@index([productId])
+}
+
+model ProductReturnMetrics {
+  id                        String   @id @default(cuid())
+  productId                 String
+  product                   Product  @relation(fields: [productId], references: [id])
+  periodStart               DateTime
+  periodEnd                 DateTime
+  
+  // Sales & Return Volumes
+  unitsSold                 Int      @default(0)
+  unitsReturned             Int      @default(0)
+  returnRate                Float    @default(0)
+  
+  // Cost Analysis
+  totalReturnCostsCents     Int      @default(0)
+  avgReturnCostCents        Int      @default(0)
+  costPerUnitSoldCents      Int      @default(0)
+  
+  // Pricing Impact
+  currentPriceCents         Int?
+  recommendedPriceCents     Int?
+  marginImpactCents         Int?
+  
+  // Return Reason Breakdown
+  defectReturns             Int      @default(0)
+  customerRemorseReturns    Int      @default(0)
+  notAsDescribedReturns     Int      @default(0)
+  damagedInShippingReturns  Int      @default(0)
+  otherReturns              Int      @default(0)
+  
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  
+  @@unique([productId, periodStart, periodEnd])
+  @@index([productId])
+}
+
+model BatchReturnAnalysis {
+  id                    String    @id @default(cuid())
+  batchNumber           String
+  supplierId            String?
+  productId             String
+  product               Product   @relation(fields: [productId], references: [id])
+  
+  // Quality Metrics
+  totalUnits            Int       @default(0)
+  defectiveUnits        Int       @default(0)
+  defectRate            Float     @default(0)
+  expectedDefectRate    Float     @default(0.02)
+  excessDefects         Int       @default(0)
+  
+  // Financial Impact
+  extraReturnCostsCents Int       @default(0)
+  chargebackAmountCents Int       @default(0)
+  chargebackStatus      String?
+  chargebackDate        DateTime?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([batchNumber])
+  @@index([productId])
+}
+
+model ReturnCostConfig {
+  id            String   @id @default(cuid())
+  configType    String
+  configKey     String
+  configValue   Float
+  effectiveDate DateTime @default(now())
+  notes         String?  @db.Text
+  
+  @@unique([configType, configKey])
+}
+
+model ScheduledJob {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  type          String
+  schedule      String
+  enabled       Boolean  @default(true)
+  lastRun       DateTime?
+  nextRun       DateTime?
+  status        String   @default("idle")
+  lastError     String?  @db.Text
+  config        Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  executions    JobExecution[]
+  
+  @@index([enabled, nextRun])
+  @@index([type])
+}
+
+model JobExecution {
+  id               String       @id @default(cuid())
+  jobId            String
+  job              ScheduledJob @relation(fields: [jobId], references: [id])
+  startedAt        DateTime     @default(now())
+  completedAt      DateTime?
+  status           String
+  recordsProcessed Int?
+  error            String?      @db.Text
+  logs             Json?
+  
+  @@index([jobId])
+  @@index([status])
+  @@index([startedAt])
 }
