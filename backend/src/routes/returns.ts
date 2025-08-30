@@ -151,6 +151,35 @@ router.post('/', async (req: Request, res: Response) => {
       return sum + (item.unitPriceCents * item.quantityReturned);
     }, 0);
 
+    // Calculate product loss based on condition
+let productLossCents = 0;
+selectedItems.forEach((item: any) => {
+  const condition = parseInt(item.productCondition || '100');
+  if (condition < 100) {
+    const lossPercentage = (100 - condition) / 100;
+    productLossCents += Math.round(item.unitPriceCents * item.quantityReturned * lossPercentage);
+  }
+});
+
+// Calculate total actual loss
+const processingCostCents = 150; // $1.50
+const totalActualLossCents = (shippingCostCents || 0) + 
+                             (returnLabelCostCents || 0) + 
+                             processingCostCents +
+                             productLossCents;
+
+const returnRecord = await prisma.return.create({
+  data: {
+    returnNumber: generateRMANumber(),
+    orderId,
+    channelId: order.channelId,
+    customerEmail: customerEmail || order.customerEmail || '',
+    status: 'pending',
+    totalReturnValueCents,
+    totalActualLossCents,  // ADD THIS LINE
+    returnShippingCostCents: shippingCostCents || 0,
+    returnlabelcostcents: returnLabelCostCents || 0,
+
     // Create the return with items
     const returnRecord = await prisma.return.create({
       data: {
@@ -531,9 +560,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     } = req.body;
 
     // Check if return exists
-    const existingReturn = await prisma.return.findUnique({
-      where: { id }
-    });
+   const existingReturn = await prisma.return.findUnique({
+  where: { id },
+  include: { items: true }  // ADD THIS LINE
+});
 
     if (!existingReturn) {
       res.status(404).json({ 
@@ -550,6 +580,26 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (returnShippingCostCents !== undefined) updateData.returnShippingCostCents = returnShippingCostCents;
     if (returnlabelcostcents !== undefined) updateData.returnlabelcostcents = returnlabelcostcents;
     if (notes !== undefined) updateData.notes = notes;
+    if (returnShippingCostCents !== undefined || returnlabelcostcents !== undefined) {
+  let productLossCents = 0;
+  
+  // Calculate product loss from damaged items
+  existingReturn.items.forEach(item => {
+    const condition = parseInt(item.condition || '100');
+    if (condition < 100) {
+      const lossPercentage = (100 - condition) / 100;
+      productLossCents += Math.round(item.totalValueCents * lossPercentage);
+    }
+  });
+  
+  // Set the total loss
+  updateData.totalActualLossCents = 
+    (returnShippingCostCents || existingReturn.returnShippingCostCents || 0) +
+    (returnlabelcostcents || existingReturn.returnlabelcostcents || 0) +
+    150 + // processing fee ($1.50)
+    productLossCents;
+}
+
     
     // Update timestamps based on status
     if (status === 'approved') {
