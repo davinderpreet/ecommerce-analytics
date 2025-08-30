@@ -289,17 +289,98 @@ router.get('/metrics', async (req: Request, res: Response) => {
 });
 
 // GET /api/v1/returns/cost-analysis - Cost analysis endpoint (STUB - returns empty data to prevent errors)
+// GET /api/v1/returns/cost-analysis - Calculate actual return costs
 router.get('/cost-analysis', async (req: Request, res: Response) => {
   try {
-    // Return minimal valid response to prevent frontend errors
+    const { startDate, endDate } = req.query;
+    
+    // Build date filter
+    const where: any = {};
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate as string);
+      if (endDate) where.createdAt.lte = new Date(endDate as string);
+    }
+
+    // Fetch all returns with items
+    const returns = await prisma.return.findMany({
+      where,
+      include: {
+        items: true,
+        order: true
+      }
+    });
+
+    // Calculate metrics
+    let totalShippingCost = 0;
+    let totalLabelCost = 0;
+    let totalProcessingCost = 0;
+    let totalProductLoss = 0;
+    let keepItOpportunities = 0;
+    let potentialKeepItSavings = 0;
+    let supplierChargebackPotential = 0;
+
+    const PROCESSING_COST_PER_RETURN = 1.50; // Changed from $5 to $1.50
+
+    returns.forEach(ret => {
+      // Actual costs
+      const shippingCost = (ret.returnShippingCostCents || 0) / 100;
+      const labelCost = (ret.returnlabelcostcents || 0) / 100;
+      const productValue = (ret.totalReturnValueCents || 0) / 100;
+      
+      totalShippingCost += shippingCost;
+      totalLabelCost += labelCost;
+      totalProcessingCost += PROCESSING_COST_PER_RETURN;
+
+      // Calculate product loss based on condition
+      ret.items.forEach(item => {
+        const itemValue = (item.unitPriceCents * item.quantityReturned) / 100;
+        const condition = parseInt(item.productCondition || '100');
+        
+        // If condition is less than 100%, we lose value
+        if (condition < 100) {
+          const lossPercentage = (100 - condition) / 100;
+          totalProductLoss += itemValue * lossPercentage;
+        }
+      });
+
+      // Keep-it opportunities (items under $25 or where return cost > 50% of value)
+      const totalReturnCost = shippingCost + labelCost + PROCESSING_COST_PER_RETURN;
+      if (productValue < 25 || totalReturnCost > productValue * 0.5) {
+        keepItOpportunities++;
+        potentialKeepItSavings += totalReturnCost;
+      }
+
+      // Supplier chargebacks for defective items
+      ret.items.forEach(item => {
+        if (['damaged', 'defective', 'quality_issue', 'not_as_described'].includes(item.reasonCategory || '')) {
+          supplierChargebackPotential += (item.unitPriceCents * item.quantityReturned) / 100;
+        }
+      });
+    });
+
+    const totalReturnCost = totalShippingCost + totalLabelCost + totalProcessingCost + totalProductLoss;
+    const avgReturnCost = returns.length > 0 ? totalReturnCost / returns.length : 0;
+
     res.json({
       success: true,
-      totalCost: 0,
-      shippingCost: 0,
-      processingCost: 0,
-      restockingCost: 0,
-      returns: []
+      summary: {
+        totalReturns: returns.length,
+        totalReturnCost: totalReturnCost,
+        avgReturnCost: avgReturnCost,
+        keepItOpportunities: keepItOpportunities,
+        potentialKeepItSavings: potentialKeepItSavings,
+        supplierChargebackPotential: supplierChargebackPotential
+      },
+      costBreakdown: {
+        shipping: totalShippingCost,
+        returnLabel: totalLabelCost,
+        processing: totalProcessingCost,
+        productLoss: totalProductLoss,
+        total: totalReturnCost
+      }
     });
+
   } catch (error: any) {
     console.error('Cost analysis error:', error);
     res.status(500).json({ 
