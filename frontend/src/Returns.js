@@ -1,12 +1,11 @@
 // frontend/src/Returns.js - ENHANCED VERSION WITH COST TRACKING
-import React, { useState, useEffect } from 'react';
 import {
   Package, AlertTriangle, TrendingUp, RotateCcw,
   Search, Filter, Plus, Check, X, Clock,
   DollarSign, Truck, AlertCircle, BarChart2,
   FileText, Download, ChevronRight, Calendar,
   TrendingDown, Target, Zap, Eye, ChevronDown,
-  RefreshCw
+  RefreshCw, Edit2, Trash2  // ADD THESE TWO ICONS
 } from 'lucide-react';
 
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8080';
@@ -850,7 +849,97 @@ Your Company Team
     </div>
   );
 };
+// Edit Return Modal Component - ADD THIS NEW COMPONENT
+const EditReturnModal = () => {
+  if (!editingReturn) return null;
 
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-white">Edit Return #{editingReturn.returnNumber}</h2>
+          <button
+            onClick={() => setEditingReturn(null)}
+            className="text-white/60 hover:text-white"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-white/70 text-sm mb-2">Return Status</label>
+            <select
+              value={editFormData.status}
+              onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            >
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="received">Received</option>
+              <option value="completed">Completed</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-white/70 text-sm mb-2">Shipping Cost ($)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={editFormData.returnShippingCostCents / 100}
+              onChange={(e) => setEditFormData({
+                ...editFormData, 
+                returnShippingCostCents: Math.round(parseFloat(e.target.value || 0) * 100)
+              })}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-white/70 text-sm mb-2">Return Label Cost ($)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={editFormData.returnlabelcostcents / 100}
+              onChange={(e) => setEditFormData({
+                ...editFormData, 
+                returnlabelcostcents: Math.round(parseFloat(e.target.value || 0) * 100)
+              })}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-white/70 text-sm mb-2">Notes</label>
+            <textarea
+              value={editFormData.notes}
+              onChange={(e) => setEditFormData({...editFormData, notes: e.target.value})}
+              rows={3}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+              placeholder="Add any notes about this return..."
+            />
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={() => setEditingReturn(null)}
+              className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveEditReturn}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium transition-all"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
   // Status badge component
   const StatusBadge = ({ status }) => {
     const statusConfig = {
@@ -1108,14 +1197,31 @@ Your Company Team
                             {new Date(returnItem.createdAt).toLocaleDateString()}
                           </p>
                         </td>
-                        <td className="p-4">
-                          <button
-                            onClick={() => setSelectedReturn(returnItem)}
-                            className="text-purple-400 hover:text-purple-300"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
-                        </td>
+                 <td className="p-4">
+  <div className="flex items-center gap-2 justify-end">
+    <button
+      onClick={() => setSelectedReturn(returnItem)}
+      className="text-purple-400 hover:text-purple-300 transition-colors"
+      title="View Details"
+    >
+      <Eye className="w-5 h-5" />
+    </button>
+    <button
+      onClick={() => startEditReturn(returnItem)}
+      className="text-blue-400 hover:text-blue-300 transition-colors"
+      title="Edit Return"
+    >
+      <Edit2 className="w-5 h-5" />
+    </button>
+    <button
+      onClick={() => deleteReturn(returnItem.id, returnItem.returnNumber)}
+      className="text-red-400 hover:text-red-300 transition-colors"
+      title="Delete Return"
+    >
+      <Trash2 className="w-5 h-5" />
+    </button>
+  </div>
+</td>
                       </tr>
                     ))
                   )}
@@ -1452,8 +1558,9 @@ Your Company Team
       )}
 
       {/* Modals */}
-      {showNewReturn && <NewReturnForm />}
-      {selectedReturn && <ReturnDetailModal returnData={selectedReturn} />}
+{showNewReturn && <NewReturnForm />}
+{selectedReturn && <ReturnDetailModal returnData={selectedReturn} />}
+{editingReturn && <EditReturnModal />}
     </div>
   );
 };
