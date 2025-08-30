@@ -175,7 +175,7 @@ router.post('/', async (req: Request, res: Response) => {
             unitPriceCents: item.unitPriceCents || 0,
             totalValueCents: (item.unitPriceCents || 0) * (item.quantityReturned || 1),
             // ✅ productCondition goes HERE in return_items:
-            productCondition: item.productCondition || '100',
+            condition: item.productCondition || '100',
             conditionNotes: item.conditionNotes || '',
             reasonCategory: item.reasonCategory || 'not_specified',
             reasonDetail: item.reasonDetail || ''
