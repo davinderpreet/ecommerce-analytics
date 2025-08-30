@@ -392,5 +392,111 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
   }
 });
+// ADD THESE TWO ROUTES to backend/src/routes/returns.ts
+
+// DELETE /api/v1/returns/:id - Delete a return
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // First check if return exists
+    const existingReturn = await prisma.return.findUnique({
+      where: { id }
+    });
+
+    if (!existingReturn) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Return not found' 
+      });
+      return;
+    }
+
+    // Delete the return (this will cascade delete return items)
+    await prisma.return.delete({
+      where: { id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Return deleted successfully'
+    });
+
+  } catch (error: any) {
+    console.error('Delete return error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// PUT /api/v1/returns/:id - Update a return
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { 
+      status, 
+      returnShippingCostCents, 
+      returnlabelcostcents, 
+      notes 
+    } = req.body;
+
+    // Check if return exists
+    const existingReturn = await prisma.return.findUnique({
+      where: { id }
+    });
+
+    if (!existingReturn) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Return not found' 
+      });
+      return;
+    }
+
+    // Build update data object
+    const updateData: any = {};
+    
+    if (status !== undefined) updateData.status = status;
+    if (returnShippingCostCents !== undefined) updateData.returnShippingCostCents = returnShippingCostCents;
+    if (returnlabelcostcents !== undefined) updateData.returnlabelcostcents = returnlabelcostcents;
+    if (notes !== undefined) updateData.notes = notes;
+    
+    // Update timestamps based on status
+    if (status === 'approved') {
+      updateData.approvedAt = new Date();
+      updateData.approvedBy = 'admin';
+    } else if (status === 'completed') {
+      updateData.completedAt = new Date();
+    }
+
+    // Update the return
+    const updatedReturn = await prisma.return.update({
+      where: { id },
+      data: updateData,
+      include: {
+        items: true,
+        order: true
+      }
+    });
+
+    res.json({
+      success: true,
+      return: updatedReturn,
+      message: 'Return updated successfully'
+    });
+
+  } catch (error: any) {
+    console.error('Update return error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+
+
 
 export default router;
