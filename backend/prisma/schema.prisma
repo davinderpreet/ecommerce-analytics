@@ -179,10 +179,7 @@ model ReturnItem {
   resolvedAt          DateTime?
   createdAt           DateTime    @default(now())
   
-  // Add these if they're in your code but not DB
-  productCondition    String?     @default("100")
-  conditionNotes      String?
-  
+ 
   @@index([returnId])
   @@index([productId])
   @@map("return_items")
