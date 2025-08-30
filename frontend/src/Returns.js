@@ -43,6 +43,75 @@ const Returns = () => {
     }
   };
 
+const deleteReturn = async (returnId, returnNumber) => {
+  if (!window.confirm(`Are you sure you want to delete return ${returnNumber}? This action cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/returns/${returnId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (response.ok) {
+      alert('Return deleted successfully');
+      fetchReturns(); // Refresh the list
+      setSelectedReturn(null); // Close modal if open
+    } else {
+      const data = await response.json();
+      alert(`Failed to delete return: ${data.error}`);
+    }
+  } catch (error) {
+    console.error('Delete return error:', error);
+    alert('Failed to delete return');
+  }
+};
+
+// Edit return state and function
+const [editingReturn, setEditingReturn] = useState(null);
+const [editFormData, setEditFormData] = useState({
+  returnShippingCostCents: 0,
+  returnlabelcostcents: 0,
+  notes: '',
+  status: 'pending'
+});
+
+const startEditReturn = (returnData) => {
+  setEditingReturn(returnData);
+  setEditFormData({
+    returnShippingCostCents: returnData.returnShippingCostCents || 0,
+    returnlabelcostcents: returnData.returnlabelcostcents || 0,
+    notes: returnData.notes || '',
+    status: returnData.status
+  });
+};
+
+const saveEditReturn = async () => {
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/returns/${editingReturn.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editFormData)
+    });
+
+    if (response.ok) {
+      alert('Return updated successfully');
+      fetchReturns();
+      setEditingReturn(null);
+      setSelectedReturn(null);
+    } else {
+      const data = await response.json();
+      alert(`Failed to update return: ${data.error}`);
+    }
+  } catch (error) {
+    console.error('Update return error:', error);
+    alert('Failed to update return');
+  }
+};
+
+
+  
   // Fetch cost analytics
   const fetchCostAnalysis = async () => {
     try {
@@ -84,10 +153,8 @@ const Returns = () => {
     fetchCostAnalysis();
   }, [filters]);
 
+  
   // Enhanced New Return Form with Cost Awareness
-// Replace the NewReturnForm component in Returns.js with this complete version:
-
-// Enhanced New Return Form with Cost Awareness
 const NewReturnForm = () => {
   const [formData, setFormData] = useState({
     orderId: '',
@@ -499,7 +566,6 @@ const NewReturnForm = () => {
 };
 
   // Return Detail Modal with Cost Breakdown
-// Replace the ReturnDetailModal component (starting at line 538) with this fixed version:
 
 const ReturnDetailModal = ({ returnData }) => {
   const [costBreakdown, setCostBreakdown] = useState(null);
