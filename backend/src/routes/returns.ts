@@ -103,11 +103,6 @@ router.get('/order/:orderNumber', async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/returns - Create new return
-// backend/src/routes/returns.ts
-// STEP 1: Find the POST '/' endpoint (around line 90-110)
-// STEP 2: Replace the entire POST endpoint with this corrected version:
-
-// POST /api/v1/returns - Create new return
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
@@ -152,33 +147,21 @@ router.post('/', async (req: Request, res: Response) => {
     }, 0);
 
     // Calculate product loss based on condition
-let productLossCents = 0;
-selectedItems.forEach((item: any) => {
-  const condition = parseInt(item.productCondition || '100');
-  if (condition < 100) {
-    const lossPercentage = (100 - condition) / 100;
-    productLossCents += Math.round(item.unitPriceCents * item.quantityReturned * lossPercentage);
-  }
-});
+    let productLossCents = 0;
+    selectedItems.forEach((item: any) => {
+      const condition = parseInt(item.productCondition || '100');
+      if (condition < 100) {
+        const lossPercentage = (100 - condition) / 100;
+        productLossCents += Math.round(item.unitPriceCents * item.quantityReturned * lossPercentage);
+      }
+    });
 
-// Calculate total actual loss
-const processingCostCents = 150; // $1.50
-const totalActualLossCents = (shippingCostCents || 0) + 
-                             (returnLabelCostCents || 0) + 
-                             processingCostCents +
-                             productLossCents;
-
-const returnRecord = await prisma.return.create({
-  data: {
-    returnNumber: generateRMANumber(),
-    orderId,
-    channelId: order.channelId,
-    customerEmail: customerEmail || order.customerEmail || '',
-    status: 'pending',
-    totalReturnValueCents,
-    totalActualLossCents,  // ADD THIS LINE
-    returnShippingCostCents: shippingCostCents || 0,
-    returnlabelcostcents: returnLabelCostCents || 0,
+    // Calculate total actual loss
+    const processingCostCents = 150; // $1.50
+    const totalActualLossCents = (shippingCostCents || 0) + 
+                                 (returnLabelCostCents || 0) + 
+                                 processingCostCents +
+                                 productLossCents;
 
     // Create the return with items
     const returnRecord = await prisma.return.create({
@@ -189,11 +172,11 @@ const returnRecord = await prisma.return.create({
         customerEmail: customerEmail || order.customerEmail || '',
         status: 'pending',
         totalReturnValueCents,
+        totalActualLossCents,  // Include the calculated loss
         returnShippingCostCents: shippingCostCents || 0,
-        returnlabelcostcents: returnLabelCostCents || 0,  // Note: lowercase to match DB
+        returnlabelcostcents: returnLabelCostCents || 0,
         notes,
         createdBy,
-        // IMPORTANT: No productCondition at this level!
         items: {
           create: selectedItems.map((item: any) => ({
             orderItem: item.orderItemId ? { connect: { id: item.orderItemId } } : undefined,
@@ -203,8 +186,7 @@ const returnRecord = await prisma.return.create({
             quantityReturned: item.quantityReturned || 1,
             unitPriceCents: item.unitPriceCents || 0,
             totalValueCents: (item.unitPriceCents || 0) * (item.quantityReturned || 1),
-            // ✅ productCondition goes HERE in return_items:
-            condition: item.productCondition || '100',
+            condition: item.productCondition || '100',  // Store condition in items
             reasonCategory: item.reasonCategory || 'not_specified',
             reasonDetail: item.reasonDetail || ''
           }))
@@ -230,6 +212,7 @@ const returnRecord = await prisma.return.create({
     });
   }
 });
+
 // GET /api/v1/returns - List all returns with filters
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -317,7 +300,6 @@ router.get('/metrics', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/returns/cost-analysis - Cost analysis endpoint (STUB - returns empty data to prevent errors)
 // GET /api/v1/returns/cost-analysis - Calculate actual return costs
 router.get('/cost-analysis', async (req: Request, res: Response) => {
   try {
@@ -349,7 +331,7 @@ router.get('/cost-analysis', async (req: Request, res: Response) => {
     let potentialKeepItSavings = 0;
     let supplierChargebackPotential = 0;
 
-    const PROCESSING_COST_PER_RETURN = 1.50; // Changed from $5 to $1.50
+    const PROCESSING_COST_PER_RETURN = 1.50; // $1.50 processing fee
 
     returns.forEach(ret => {
       // Actual costs
@@ -361,24 +343,23 @@ router.get('/cost-analysis', async (req: Request, res: Response) => {
       totalLabelCost += labelCost;
       totalProcessingCost += PROCESSING_COST_PER_RETURN;
 
-      // Calculate product loss based on condition
-  // Calculate product loss based on condition field
-ret.items.forEach(item => {
-  const itemValue = (item.unitPriceCents * item.quantityReturned) / 100;
-  const condition = parseInt(item.condition || '100');
-  
-  // If condition is less than 100%, we lose value
-  if (condition < 100) {
-    const lossPercentage = (100 - condition) / 100;
-    totalProductLoss += itemValue * lossPercentage;
-  }
-  
-  // Also add full loss for damaged items
-  if (item.quantityDamaged > 0) {
-    const damagedValue = (item.unitPriceCents * item.quantityDamaged) / 100;
-    totalProductLoss += damagedValue;
-  }
-});
+      // Calculate product loss based on condition field
+      ret.items.forEach(item => {
+        const itemValue = (item.unitPriceCents * item.quantityReturned) / 100;
+        const condition = parseInt(item.condition || '100');
+        
+        // If condition is less than 100%, we lose value
+        if (condition < 100) {
+          const lossPercentage = (100 - condition) / 100;
+          totalProductLoss += itemValue * lossPercentage;
+        }
+        
+        // Also add full loss for damaged items
+        if (item.quantityDamaged > 0) {
+          const damagedValue = (item.unitPriceCents * item.quantityDamaged) / 100;
+          totalProductLoss += damagedValue;
+        }
+      });
 
       // Keep-it opportunities (items under $25 or where return cost > 50% of value)
       const totalReturnCost = shippingCost + labelCost + PROCESSING_COST_PER_RETURN;
@@ -509,7 +490,6 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
   }
 });
-// ADD THESE TWO ROUTES to backend/src/routes/returns.ts
 
 // DELETE /api/v1/returns/:id - Delete a return
 router.delete('/:id', async (req: Request, res: Response) => {
@@ -559,11 +539,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       notes 
     } = req.body;
 
-    // Check if return exists
-   const existingReturn = await prisma.return.findUnique({
-  where: { id },
-  include: { items: true }  // ADD THIS LINE
-});
+    // Check if return exists and get items for calculation
+    const existingReturn = await prisma.return.findUnique({
+      where: { id },
+      include: { items: true }
+    });
 
     if (!existingReturn) {
       res.status(404).json({ 
@@ -580,26 +560,27 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (returnShippingCostCents !== undefined) updateData.returnShippingCostCents = returnShippingCostCents;
     if (returnlabelcostcents !== undefined) updateData.returnlabelcostcents = returnlabelcostcents;
     if (notes !== undefined) updateData.notes = notes;
+    
+    // Recalculate total loss if costs changed
     if (returnShippingCostCents !== undefined || returnlabelcostcents !== undefined) {
-  let productLossCents = 0;
-  
-  // Calculate product loss from damaged items
-  existingReturn.items.forEach(item => {
-    const condition = parseInt(item.condition || '100');
-    if (condition < 100) {
-      const lossPercentage = (100 - condition) / 100;
-      productLossCents += Math.round(item.totalValueCents * lossPercentage);
+      let productLossCents = 0;
+      
+      // Calculate product loss from items
+      existingReturn.items.forEach(item => {
+        const condition = parseInt(item.condition || '100');
+        if (condition < 100) {
+          const lossPercentage = (100 - condition) / 100;
+          productLossCents += Math.round(item.totalValueCents * lossPercentage);
+        }
+      });
+      
+      // Set the total loss
+      updateData.totalActualLossCents = 
+        (returnShippingCostCents || existingReturn.returnShippingCostCents || 0) +
+        (returnlabelcostcents || existingReturn.returnlabelcostcents || 0) +
+        150 + // processing fee ($1.50)
+        productLossCents;
     }
-  });
-  
-  // Set the total loss
-  updateData.totalActualLossCents = 
-    (returnShippingCostCents || existingReturn.returnShippingCostCents || 0) +
-    (returnlabelcostcents || existingReturn.returnlabelcostcents || 0) +
-    150 + // processing fee ($1.50)
-    productLossCents;
-}
-
     
     // Update timestamps based on status
     if (status === 'approved') {
@@ -633,8 +614,5 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
   }
 });
-
-
-
 
 export default router;
