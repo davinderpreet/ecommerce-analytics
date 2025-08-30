@@ -85,268 +85,418 @@ const Returns = () => {
   }, [filters]);
 
   // Enhanced New Return Form with Cost Awareness
-  const NewReturnForm = () => {
-    const [formData, setFormData] = useState({
-      orderId: '',
-      items: [],
-      customerEmail: '',
-      notes: '',
-      searchOrderNumber: ''
-    });
-    const [orderData, setOrderData] = useState(null);
-    const [costEstimate, setCostEstimate] = useState(null);
-    const [showKeepItOffer, setShowKeepItOffer] = useState(false);
+// Replace the NewReturnForm component in Returns.js with this complete version:
 
-    // Search for order
-    const searchOrder = async () => {
-      try {
-        const response = await fetch(
-  `${API_BASE}/api/v1/returns/order/${encodeURIComponent(formData.searchOrderNumber)}`
-);
-        const data = await response.json();
-        
-        if (data.success && data.order) {
-          setOrderData(data.order);
-          setFormData({...formData, orderId: data.order.id, customerEmail: data.order.customerEmail});
-          
-          // Estimate return cost
-          const returnValue = data.order.totalCents;
-          const shippingCost = data.order.shippingCostCents || 1200;
-          const returnLabelCost = 1500; // $15
-          const processingCost = 500; // $5
-          const estimatedTotalCost = shippingCost + returnLabelCost + processingCost;
-          
-          if (estimatedTotalCost > returnValue * 0.5) {
-            setShowKeepItOffer(true);
-          }
-          
-          setCostEstimate({
-            returnValue: returnValue / 100,
-            originalShipping: shippingCost / 100,
-            returnLabel: returnLabelCost / 100,
-            processing: processingCost / 100,
-            totalCost: estimatedTotalCost / 100,
-            keepItRecommended: estimatedTotalCost > returnValue * 0.5
-          });
-          
-          // Pre-select all items
-          const selectedItems = data.order.items.map((item: any) => ({
-            orderItemId: item.id,
-            productId: item.productId || item.product?.id,
-            sku: item.sku,
-            productTitle: item.title,
-            quantityReturned: item.quantity,
-            unitPriceCents: item.priceCents
-          }));
-          setFormData(prev => ({...prev, items: selectedItems}));
-        } else {
-          alert('Order not found');
-        }
-      } catch (error) {
-        console.error('Order search failed:', error);
-        alert('Failed to find order');
-      }
-    };
+// Enhanced New Return Form with Cost Awareness
+const NewReturnForm = () => {
+  const [formData, setFormData] = useState({
+    orderId: '',
+    items: [],
+    customerEmail: '',
+    notes: '',
+    searchOrderNumber: ''
+  });
+  
+  const [orderData, setOrderData] = useState(null);
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [shippingCost, setShippingCost] = useState('');
+  const [returnLabelCost, setReturnLabelCost] = useState('');
+  const [searchError, setSearchError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (e) => {
-      e.preventDefault();
+  // Search for order
+  const searchOrder = async () => {
+    if (!formData.searchOrderNumber.trim()) {
+      setSearchError('Please enter an order number');
+      return;
+    }
+
+    setSearchError('');
+    setLoading(true);
+    
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/v1/returns/order/${encodeURIComponent(formData.searchOrderNumber)}`
+      );
+      const data = await response.json();
       
-      try {
-        const response = await fetch(`${API_BASE}/api/v1/returns/create-with-cost`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...formData,
-            autoApprove: false
-          })
+      if (data.success && data.order) {
+        setOrderData(data.order);
+        setFormData({
+          ...formData, 
+          orderId: data.order.id, 
+          customerEmail: data.order.customerEmail
         });
         
-        const data = await response.json();
-        
-        if (data.offerKeepIt) {
-          setShowKeepItOffer(true);
-        } else if (data.success) {
-          setShowNewReturn(false);
-          fetchReturns();
-          fetchCostAnalysis();
-        }
-      } catch (error) {
-        console.error('Failed to create return:', error);
+        // Initialize selected products with all order items
+        setSelectedProducts(
+          data.order.items.map(item => ({
+            ...item,
+            selected: true,
+            quantityReturned: item.quantity,
+            productCondition: '100',
+            conditionNotes: '',
+            reasonCategory: 'not_specified'
+          }))
+        );
+      } else {
+        setSearchError('Order not found');
+        setOrderData(null);
+        setSelectedProducts([]);
       }
-    };
+    } catch (error) {
+      console.error('Order search failed:', error);
+      setSearchError('Failed to find order');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-        <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-white">Create New Return</h2>
-            <button
-              onClick={() => setShowNewReturn(false)}
-              className="text-white/60 hover:text-white"
-            >
-              <X className="w-6 h-6" />
-            </button>
+  // Toggle product selection
+  const toggleProduct = (index) => {
+    const updated = [...selectedProducts];
+    updated[index].selected = !updated[index].selected;
+    setSelectedProducts(updated);
+  };
+
+  // Update product condition
+  const updateProductCondition = (index, field, value) => {
+    const updated = [...selectedProducts];
+    updated[index][field] = value;
+    setSelectedProducts(updated);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    const selectedItems = selectedProducts
+      .filter(p => p.selected)
+      .map(p => ({
+        orderItemId: p.id,
+        productId: p.productId || p.product?.id,
+        sku: p.sku,
+        productTitle: p.title,
+        quantityReturned: parseInt(p.quantityReturned) || 1,
+        unitPriceCents: p.priceCents,
+        productCondition: p.productCondition,
+        conditionNotes: p.conditionNotes,
+        reasonCategory: p.reasonCategory,
+        reasonDetail: p.conditionNotes
+      }));
+
+    if (selectedItems.length === 0) {
+      alert('Please select at least one product to return');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/returns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: orderData.id,
+          selectedItems,
+          shippingCostCents: Math.round(parseFloat(shippingCost || 0) * 100),
+          returnLabelCostCents: Math.round(parseFloat(returnLabelCost || 0) * 100),
+          customerEmail: orderData.customerEmail,
+          notes: formData.notes,
+          createdBy: 'user'
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Return ${data.return.returnNumber} created successfully!`);
+        setShowNewReturn(false);
+        fetchReturns();
+        // Reset form
+        setFormData({
+          orderId: '',
+          items: [],
+          customerEmail: '',
+          notes: '',
+          searchOrderNumber: ''
+        });
+        setOrderData(null);
+        setSelectedProducts([]);
+        setShippingCost('');
+        setReturnLabelCost('');
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to create return:', error);
+      alert('Failed to create return');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-white">Create New Return</h2>
+          <button
+            onClick={() => setShowNewReturn(false)}
+            className="text-white/60 hover:text-white"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Order Search */}
+          <div>
+            <label className="block text-white/70 text-sm mb-2">Order Number</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={formData.searchOrderNumber}
+                onChange={(e) => setFormData({...formData, searchOrderNumber: e.target.value})}
+                className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                placeholder="Enter order number..."
+              />
+              <button
+                type="button"
+                onClick={searchOrder}
+                disabled={loading}
+                className="px-6 py-3 bg-purple-500 hover:bg-purple-600 rounded-xl text-white disabled:opacity-50"
+              >
+                Search
+              </button>
+            </div>
+            {searchError && (
+              <p className="mt-2 text-red-400 text-sm flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                {searchError}
+              </p>
+            )}
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Order Search */}
-            <div>
-              <label className="block text-white/70 text-sm mb-2">Order Number</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={formData.searchOrderNumber}
-                  onChange={(e) => setFormData({...formData, searchOrderNumber: e.target.value})}
-                  className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
-                  placeholder="Enter order number..."
-                />
-                <button
-                  type="button"
-                  onClick={searchOrder}
-                  className="px-6 py-3 bg-purple-500 hover:bg-purple-600 rounded-xl text-white"
-                >
-                  Search
-                </button>
-              </div>
-            </div>
-
-            {/* Order Details & Cost Estimate */}
-            {orderData && (
+          {/* Order Details */}
+          {orderData && (
+            <>
+              {/* Order Info Box */}
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <div className="flex justify-between items-start mb-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <p className="text-white font-medium">Order #{orderData.number}</p>
-                    <p className="text-white/60 text-sm">{orderData.customerEmail}</p>
-                    <p className="text-white/60 text-sm">Total: ${(orderData.totalCents / 100).toFixed(2)}</p>
+                    <p className="text-white/60 text-sm">Order #</p>
+                    <p className="text-white font-medium">{orderData.number}</p>
                   </div>
-                  {costEstimate && (
-                    <div className="text-right">
-                      <p className="text-white/60 text-sm mb-2">Estimated Return Costs:</p>
-                      <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-white/60">Original Shipping:</span>
-                            <span className="text-red-400">-${costEstimate.originalShipping?.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-white/60">Return Label:</span>
-                            <span className="text-red-400">-${costEstimate.returnLabel?.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-white/60">Processing:</span>
-                            <span className="text-red-400">-${costEstimate.processing?.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between font-bold pt-1 border-t border-red-500/30">
-                            <span className="text-white">Total Loss:</span>
-                            <span className="text-red-500">${costEstimate.totalCost?.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <div>
+                    <p className="text-white/60 text-sm">Customer</p>
+                    <p className="text-white font-medium">{orderData.customerEmail}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-sm">Total</p>
+                    <p className="text-white font-medium">
+                      ${(orderData.totalCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-sm">Date</p>
+                    <p className="text-white font-medium">
+                      {new Date(orderData.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
                 </div>
+              </div>
 
-                {/* Keep It Offer Alert */}
-                {showKeepItOffer && (
-                  <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-5 h-5 text-yellow-400 mt-0.5" />
-                      <div>
-                        <p className="text-yellow-400 font-medium">Consider "Keep It" Refund</p>
-                        <p className="text-yellow-400/70 text-sm mt-1">
-                          Return costs exceed 50% of product value. Consider offering a refund 
-                          without requiring the return.
-                        </p>
-                        <div className="flex gap-2 mt-3">
-                          <button
-                            type="button"
-                            className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded-lg text-sm"
-                            onClick={() => {
-                              // Process keep-it refund
-                              console.log('Process keep-it refund');
-                            }}
-                          >
-                            Offer Keep-It Refund
-                          </button>
-                          <button
-                            type="button"
-                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm"
-                            onClick={() => setShowKeepItOffer(false)}
-                          >
-                            Proceed with Return
-                          </button>
+              {/* Product Selection */}
+              <div>
+                <label className="block text-white/70 text-sm mb-4">
+                  Select Products to Return
+                </label>
+                <div className="space-y-3">
+                  {selectedProducts.map((item, index) => (
+                    <div 
+                      key={item.id} 
+                      className={`p-4 bg-white/5 rounded-xl border transition-all ${
+                        item.selected ? 'border-purple-500' : 'border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          onChange={() => toggleProduct(index)}
+                          className="mt-1 w-5 h-5 rounded"
+                        />
+                        
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <p className="text-white font-medium">{item.title}</p>
+                              <p className="text-white/60 text-sm">SKU: {item.sku || 'N/A'}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-white">
+                                ${(item.priceCents / 100).toFixed(2)} × {item.quantity}
+                              </p>
+                              <p className="text-white/60 text-sm">
+                                Total: ${(item.totalCents / 100).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+
+                          {item.selected && (
+                            <div className="space-y-3 mt-3 pt-3 border-t border-white/10">
+                              {/* Row 1: Quantity and Condition */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-white/60 text-xs mb-1">
+                                    Quantity to Return
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={item.quantity}
+                                    value={item.quantityReturned}
+                                    onChange={(e) => updateProductCondition(index, 'quantityReturned', parseInt(e.target.value) || 1)}
+                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                  />
+                                </div>
+                                
+                                <div>
+                                  <label className="block text-white/60 text-xs mb-1">
+                                    Product Condition
+                                  </label>
+                                  <select
+                                    value={item.productCondition}
+                                    onChange={(e) => updateProductCondition(index, 'productCondition', e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                  >
+                                    <option value="100">New - 100%</option>
+                                    <option value="80">Like New - 80%</option>
+                                    <option value="50">Used - 50%</option>
+                                    <option value="20">Damaged - 20%</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Row 2: Return Reason */}
+                              <div>
+                                <label className="block text-white/60 text-xs mb-1">
+                                  Return Reason
+                                </label>
+                                <select
+                                  value={item.reasonCategory}
+                                  onChange={(e) => updateProductCondition(index, 'reasonCategory', e.target.value)}
+                                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                >
+                                  <option value="not_specified">Select a reason...</option>
+                                  <option value="damaged">Damaged/Defective</option>
+                                  <option value="not_as_described">Not as Described</option>
+                                  <option value="wrong_item">Wrong Item Sent</option>
+                                  <option value="quality_issue">Quality Issue</option>
+                                  <option value="changed_mind">Changed Mind</option>
+                                  <option value="no_longer_needed">No Longer Needed</option>
+                                  <option value="arrived_too_late">Arrived Too Late</option>
+                                </select>
+                              </div>
+                              
+                              {/* Row 3: Condition Notes */}
+                              <div>
+                                <label className="block text-white/60 text-xs mb-1">
+                                  Additional Details (Optional)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={item.conditionNotes}
+                                  onChange={(e) => updateProductCondition(index, 'conditionNotes', e.target.value)}
+                                  placeholder="Describe the issue or reason for return..."
+                                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-white/40"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Item Selection */}
-                <div>
-                  <p className="text-white/70 text-sm mb-2">Select items to return:</p>
-                  {orderData.items?.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded">
-                      <input type="checkbox" className="rounded" />
-                      <div className="flex-1">
-                        <p className="text-white text-sm">{item.title}</p>
-                        <p className="text-white/60 text-xs">SKU: {item.sku} • Qty: {item.quantity}</p>
-                      </div>
-                      <p className="text-white">${(item.totalCents / 100).toFixed(2)}</p>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
 
-            {/* Reason Selection */}
-            <div>
-              <label className="block text-white/70 text-sm mb-2">Return Reason</label>
-              <select 
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
-                onChange={(e) => setFormData({...formData, reasonCategory: e.target.value})}
-              >
-                <option value="">Select reason...</option>
-                <option value="defective">Defective Product</option>
-                <option value="not_as_described">Not as Described</option>
-                <option value="changed_mind">Changed Mind</option>
-                <option value="damaged_in_shipping">Damaged in Shipping</option>
-                <option value="wrong_item">Wrong Item Received</option>
-              </select>
-            </div>
+              {/* Shipping Costs */}
+              <div>
+                <label className="block text-white/70 text-sm mb-4">
+                  Shipping Costs
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-white/60 text-xs mb-1">
+                      Original Shipping Cost ($)
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={shippingCost}
+                        onChange={(e) => setShippingCost(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-white/60 text-xs mb-1">
+                      Return Label Cost ($)
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={returnLabelCost}
+                        onChange={(e) => setReturnLabelCost(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full pl-10 pr-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            {/* Notes */}
-            <div>
-              <label className="block text-white/70 text-sm mb-2">Additional Notes</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
-                rows={3}
-                placeholder="Describe the issue..."
-              />
-            </div>
+              {/* Additional Notes */}
+              <div>
+                <label className="block text-white/60 text-sm mb-2">
+                  Additional Notes (Optional)
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                  rows={3}
+                  placeholder="Any additional information about this return..."
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
+                />
+              </div>
 
-            {/* Action Buttons */}
-            <div className="flex space-x-3">
-              <button
-                type="button"
-                onClick={() => setShowNewReturn(false)}
-                className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium"
-              >
-                Create Return
-              </button>
-            </div>
-          </form>
-        </div>
+              {/* Submit Buttons */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowNewReturn(false)}
+                  className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={selectedProducts.filter(p => p.selected).length === 0}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 rounded-xl text-white font-medium disabled:opacity-50 transition-all"
+                >
+                  Create Return
+                </button>
+              </div>
+            </>
+          )}
+        </form>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Return Detail Modal with Cost Breakdown
   const ReturnDetailModal = ({ returnData }) => {
