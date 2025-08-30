@@ -101,8 +101,8 @@ const Returns = () => {
     const searchOrder = async () => {
       try {
         const response = await fetch(
-          `${API_BASE}/api/v1/returns/orders/search?number=${formData.searchOrderNumber}`
-        );
+  `${API_BASE}/api/v1/returns/order/${encodeURIComponent(formData.searchOrderNumber)}`
+);
         const data = await response.json();
         
         if (data.success && data.order) {
