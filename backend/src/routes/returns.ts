@@ -103,6 +103,11 @@ router.get('/order/:orderNumber', async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/returns - Create new return
+// backend/src/routes/returns.ts
+// STEP 1: Find the POST '/' endpoint (around line 90-110)
+// STEP 2: Replace the entire POST endpoint with this corrected version:
+
+// POST /api/v1/returns - Create new return
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
@@ -156,22 +161,24 @@ router.post('/', async (req: Request, res: Response) => {
         status: 'pending',
         totalReturnValueCents,
         returnShippingCostCents: shippingCostCents || 0,
-        returnlabelcostcents: returnLabelCostCents || 0,
+        returnlabelcostcents: returnLabelCostCents || 0,  // Note: lowercase to match DB
         notes,
         createdBy,
+        // IMPORTANT: No productCondition at this level!
         items: {
           create: selectedItems.map((item: any) => ({
             orderItemId: item.orderItemId,
             productId: item.productId,
-            sku: item.sku,
-            productTitle: item.productTitle,
-            quantityReturned: item.quantityReturned,
-            unitPriceCents: item.unitPriceCents,
-            totalValueCents: item.unitPriceCents * item.quantityReturned,
+            sku: item.sku || '',
+            productTitle: item.productTitle || '',
+            quantityReturned: item.quantityReturned || 1,
+            unitPriceCents: item.unitPriceCents || 0,
+            totalValueCents: (item.unitPriceCents || 0) * (item.quantityReturned || 1),
+            // ✅ productCondition goes HERE in return_items:
             productCondition: item.productCondition || '100',
-            conditionNotes: item.conditionNotes,
+            conditionNotes: item.conditionNotes || '',
             reasonCategory: item.reasonCategory || 'not_specified',
-            reasonDetail: item.reasonDetail
+            reasonDetail: item.reasonDetail || ''
           }))
         }
       },
@@ -195,7 +202,6 @@ router.post('/', async (req: Request, res: Response) => {
     });
   }
 });
-
 // GET /api/v1/returns - List all returns with filters
 router.get('/', async (req: Request, res: Response) => {
   try {
