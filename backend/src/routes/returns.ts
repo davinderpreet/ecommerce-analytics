@@ -122,7 +122,7 @@ router.post('/', async (req: Request, res: Response) => {
         customerEmail: customerEmail || order.customerEmail || '',
         status: 'pending',
         totalReturnValueCents,
-        shippingCostCents: shippingCostCents || 0,
+      returnShippingCostCents: shippingCostCents || 0,
         returnLabelCostCents: returnLabelCostCents || 0,
         notes,
         createdBy,
@@ -144,8 +144,7 @@ router.post('/', async (req: Request, res: Response) => {
       },
       include: {
         items: true,
-        order: true,
-        channel: true
+        order: true
       }
     });
 
