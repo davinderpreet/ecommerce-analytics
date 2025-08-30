@@ -575,7 +575,7 @@ const ReturnDetailModal = ({ returnData }) => {
       // Calculate actual costs from the return data
       const shippingCost = (returnData.returnShippingCostCents || 0) / 100;
       const labelCost = (returnData.returnlabelcostcents || 0) / 100;
-      const processingCost = 5; // Default $5 processing fee
+      const processingCost = 1.5; // Default $5 processing fee
       const totalLoss = shippingCost + labelCost + processingCost;
       
       setCostBreakdown({
