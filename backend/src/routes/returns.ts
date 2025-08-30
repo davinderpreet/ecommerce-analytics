@@ -156,7 +156,7 @@ router.post('/', async (req: Request, res: Response) => {
         status: 'pending',
         totalReturnValueCents,
         returnShippingCostCents: shippingCostCents || 0,
-        returnLabelCostCents: returnLabelCostCents || 0,
+        returnlabelcostcents: returnLabelCostCents || 0,
         notes,
         createdBy,
         items: {
