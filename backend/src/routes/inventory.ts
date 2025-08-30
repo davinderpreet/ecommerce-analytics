@@ -55,7 +55,7 @@ router.get('/', async (req: Request, res: Response) => {
       
       // Calculate reorder info using product fields
       const leadTime = product.leadTimeDays || inventory?.leadTimeDays || 7;
-      const safetyStock = product.safetyStockDays || inventory?.safetyStockDays || 3;
+      const safetyStock = product.safetyStockDays || inventory?.safetyStock || 3;
       const reorderPoint = Math.ceil(salesVelocity * (leadTime + safetyStock));
       const shouldReorderNow = currentQuantity <= reorderPoint;
       
@@ -83,7 +83,7 @@ router.get('/', async (req: Request, res: Response) => {
         reorderDate: reorderDate.toISOString(),
         lastRestockDate: inventory?.lastRestockDate,
         nextRestockDate: inventory?.nextRestockDate,
-        supplierName: product.supplierName || product.supplier || 'Unknown',
+        supplierName: product.supplierName || 'Unknown',,
         supplierCountry: product.supplierCountry || 'Unknown',
         shippingMethod: product.shippingMethod || 'Sea'
       };
@@ -221,7 +221,6 @@ router.post('/:productId/update', async (req: Request, res: Response) => {
       inventory = await prisma.inventory.create({
         data: {
           productId,
-          channelId: product.channelId,
           quantity: 0,
           reserved: 0,
           available: 0
@@ -242,7 +241,7 @@ router.post('/:productId/update', async (req: Request, res: Response) => {
       where: { id: inventory.id },
       data: {
         quantity: newQuantity,
-        available: newQuantity - inventory.reserved,
+        available: newQuantity - (inventory.reserved || 0),
         lastRestockDate: type === 'add' ? new Date() : inventory.lastRestockDate
       }
     });
@@ -317,7 +316,6 @@ router.post('/restock', async (req: Request, res: Response) => {
         inventory = await prisma.inventory.create({
           data: {
             productId: product.id,
-            channelId: product.channelId,
             quantity: item.quantity,
             reserved: 0,
             available: item.quantity
@@ -449,7 +447,6 @@ router.post('/sync-shopify', async (req: Request, res: Response) => {
             inventory = await prisma.inventory.create({
               data: {
                 productId: dbProduct.id,
-                channelId: dbProduct.channelId,
                 quantity: variant.inventoryQuantity,
                 reserved: 0,
                 available: variant.inventoryQuantity
