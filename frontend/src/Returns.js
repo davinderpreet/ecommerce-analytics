@@ -1,4 +1,5 @@
 // frontend/src/Returns.js - ENHANCED VERSION WITH COST TRACKING
+import React, { useState, useEffect } from 'react';
 import {
   Package, AlertTriangle, TrendingUp, RotateCcw,
   Search, Filter, Plus, Check, X, Clock,
