@@ -457,7 +457,7 @@ router.post('/sync-shopify', async (req: Request, res: Response) => {
               where: { id: inventory.id },
               data: {
                 quantity: variant.inventoryQuantity,
-                available: variant.inventoryQuantity - inventory.reserved
+               available: (inventory.available || 0) - (inventory.reserved || 0)
               }
             });
           }
