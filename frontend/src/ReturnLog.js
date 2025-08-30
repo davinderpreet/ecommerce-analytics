@@ -107,7 +107,7 @@ const ReturnLog = () => {
         productId: p.productId,
         sku: p.sku,
         productTitle: p.title,
-        quantityReturned: p.quantityReturned,
+        quantityReturned: parseInt(p.quantityReturned) || 1,
         unitPriceCents: p.priceCents,
         productCondition: p.productCondition,
         conditionNotes: p.conditionNotes,
@@ -318,46 +318,71 @@ const ReturnLog = () => {
                             </div>
 
                             {item.selected && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-3 border-t border-white/10">
-                                <div>
-                                  <label className="block text-white/60 text-xs mb-1">
-                                    Quantity to Return
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    max={item.quantity}
-                                    value={item.quantityReturned}
-                                    onChange={(e) => updateProductCondition(index, 'quantityReturned', parseInt(e.target.value))}
-                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
-                                  />
+                              <div className="space-y-3 mt-3 pt-3 border-t border-white/10">
+                                {/* Row 1: Quantity and Condition */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-white/60 text-xs mb-1">
+                                      Quantity to Return
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max={item.quantity}
+                                      value={item.quantityReturned}
+                                      onChange={(e) => updateProductCondition(index, 'quantityReturned', parseInt(e.target.value) || 1)}
+                                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                    />
+                                  </div>
+                                  
+                                  <div>
+                                    <label className="block text-white/60 text-xs mb-1">
+                                      Product Condition
+                                    </label>
+                                    <select
+                                      value={item.productCondition}
+                                      onChange={(e) => updateProductCondition(index, 'productCondition', e.target.value)}
+                                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                                    >
+                                      <option value="100">New - 100%</option>
+                                      <option value="80">Like New - 80%</option>
+                                      <option value="50">Used - 50%</option>
+                                      <option value="20">Damaged - 20%</option>
+                                    </select>
+                                  </div>
                                 </div>
-                                
+
+                                {/* Row 2: Return Reason */}
                                 <div>
                                   <label className="block text-white/60 text-xs mb-1">
-                                    Product Condition
+                                    Return Reason
                                   </label>
                                   <select
-                                    value={item.productCondition}
-                                    onChange={(e) => updateProductCondition(index, 'productCondition', e.target.value)}
+                                    value={item.reasonCategory}
+                                    onChange={(e) => updateProductCondition(index, 'reasonCategory', e.target.value)}
                                     className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
                                   >
-                                    <option value="100">New - 100%</option>
-                                    <option value="80">Like New - 80%</option>
-                                    <option value="50">Used - 50%</option>
-                                    <option value="20">Damaged - 20%</option>
+                                    <option value="not_specified">Select a reason...</option>
+                                    <option value="damaged">Damaged/Defective</option>
+                                    <option value="not_as_described">Not as Described</option>
+                                    <option value="wrong_item">Wrong Item Sent</option>
+                                    <option value="quality_issue">Quality Issue</option>
+                                    <option value="changed_mind">Changed Mind</option>
+                                    <option value="no_longer_needed">No Longer Needed</option>
+                                    <option value="arrived_too_late">Arrived Too Late</option>
                                   </select>
                                 </div>
                                 
-                                <div className="md:col-span-2">
+                                {/* Row 3: Condition Notes */}
+                                <div>
                                   <label className="block text-white/60 text-xs mb-1">
-                                    Condition Notes (Optional)
+                                    Additional Details (Optional)
                                   </label>
                                   <input
                                     type="text"
                                     value={item.conditionNotes}
                                     onChange={(e) => updateProductCondition(index, 'conditionNotes', e.target.value)}
-                                    placeholder="Describe condition..."
+                                    placeholder="Describe the issue or reason for return..."
                                     className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-white/40"
                                   />
                                 </div>
@@ -378,7 +403,7 @@ const ReturnLog = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-white/60 text-xs mb-1">
-                        Shipping Cost (Manual Entry)
+                        Original Shipping Cost ($)
                       </label>
                       <div className="relative">
                         <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
@@ -395,7 +420,7 @@ const ReturnLog = () => {
                     
                     <div>
                       <label className="block text-white/60 text-xs mb-1">
-                        Return Label Cost (Manual Entry)
+                        Return Label Cost ($)
                       </label>
                       <div className="relative">
                         <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
@@ -421,7 +446,7 @@ const ReturnLog = () => {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={3}
-                    placeholder="Any additional information..."
+                    placeholder="Any additional information about this return..."
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40"
                   />
                 </div>
@@ -481,12 +506,12 @@ const ReturnLog = () => {
                   {ret.items?.length || 0} items
                 </td>
                 <td className="px-6 py-4 text-white/80">
-                  ${(ret.totalReturnValueCents / 100).toFixed(2)}
+                  ${((ret.totalReturnValueCents || 0) / 100).toFixed(2)}
                 </td>
                 <td className="px-6 py-4 text-white/80">
                   <div className="text-sm">
-                    <div>Ship: ${((ret.shippingCostCents || 0) / 100).toFixed(2)}</div>
-                    <div>Label: ${((ret.returnLabelCostCents || 0) / 100).toFixed(2)}</div>
+                    <div>Ship: ${((ret.returnShippingCostCents || 0) / 100).toFixed(2)}</div>
+                    <div>Label: ${((ret.returnlabelcostcents || 0) / 100).toFixed(2)}</div>
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -570,9 +595,12 @@ const ReturnLog = () => {
                             Condition: {item.productCondition}% 
                             {item.conditionNotes && ` - ${item.conditionNotes}`}
                           </p>
+                          <p className="text-white/60 text-sm">
+                            Reason: {item.reasonCategory?.replace(/_/g, ' ')}
+                          </p>
                         </div>
                         <p className="text-white">
-                          ${(item.totalValueCents / 100).toFixed(2)}
+                          ${((item.totalValueCents || 0) / 100).toFixed(2)}
                         </p>
                       </div>
                     </div>
@@ -587,27 +615,27 @@ const ReturnLog = () => {
                   <div className="flex justify-between">
                     <span className="text-white/60">Return Value</span>
                     <span className="text-white">
-                      ${(selectedReturn.totalReturnValueCents / 100).toFixed(2)}
+                      ${((selectedReturn.totalReturnValueCents || 0) / 100).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-white/60">Shipping Cost</span>
                     <span className="text-white">
-                      ${((selectedReturn.shippingCostCents || 0) / 100).toFixed(2)}
+                      ${((selectedReturn.returnShippingCostCents || 0) / 100).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-white/60">Return Label Cost</span>
                     <span className="text-white">
-                      ${((selectedReturn.returnLabelCostCents || 0) / 100).toFixed(2)}
+                      ${((selectedReturn.returnlabelcostcents || 0) / 100).toFixed(2)}
                     </span>
                   </div>
                   <div className="pt-2 border-t border-white/10 flex justify-between font-medium">
                     <span className="text-white">Total Cost</span>
                     <span className="text-red-400">
                       ${(
-                        ((selectedReturn.shippingCostCents || 0) + 
-                         (selectedReturn.returnLabelCostCents || 0)) / 100
+                        ((selectedReturn.returnShippingCostCents || 0) + 
+                         (selectedReturn.returnlabelcostcents || 0)) / 100
                       ).toFixed(2)}
                     </span>
                   </div>
