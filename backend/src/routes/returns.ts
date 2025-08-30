@@ -333,16 +333,23 @@ router.get('/cost-analysis', async (req: Request, res: Response) => {
       totalProcessingCost += PROCESSING_COST_PER_RETURN;
 
       // Calculate product loss based on condition
-      ret.items.forEach(item => {
-        const itemValue = (item.unitPriceCents * item.quantityReturned) / 100;
-        const condition = parseInt(item.productCondition || '100');
-        
-        // If condition is less than 100%, we lose value
-        if (condition < 100) {
-          const lossPercentage = (100 - condition) / 100;
-          totalProductLoss += itemValue * lossPercentage;
-        }
-      });
+  // Calculate product loss based on condition field
+ret.items.forEach(item => {
+  const itemValue = (item.unitPriceCents * item.quantityReturned) / 100;
+  const condition = parseInt(item.condition || '100');
+  
+  // If condition is less than 100%, we lose value
+  if (condition < 100) {
+    const lossPercentage = (100 - condition) / 100;
+    totalProductLoss += itemValue * lossPercentage;
+  }
+  
+  // Also add full loss for damaged items
+  if (item.quantityDamaged > 0) {
+    const damagedValue = (item.unitPriceCents * item.quantityDamaged) / 100;
+    totalProductLoss += damagedValue;
+  }
+});
 
       // Keep-it opportunities (items under $25 or where return cost > 50% of value)
       const totalReturnCost = shippingCost + labelCost + PROCESSING_COST_PER_RETURN;
