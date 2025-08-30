@@ -499,190 +499,291 @@ const NewReturnForm = () => {
 };
 
   // Return Detail Modal with Cost Breakdown
-  const ReturnDetailModal = ({ returnData }) => {
-    const [costBreakdown, setCostBreakdown] = useState(null);
+// Replace the ReturnDetailModal component (starting at line 538) with this fixed version:
 
-    useEffect(() => {
-      // Fetch cost breakdown for this return
-      if (returnData?.id) {
-        // Cost data would be included with return
-        setCostBreakdown({
-          originalShipping: (returnData.order?.shippingCostCents || 0) / 100,
-          returnLabel: (returnData.returnLabelCostCents || 0) / 100,
-          processing: (returnData.processingCostCents || 0) / 100,
-          productLoss: (returnData.productValueLossCents || 0) / 100,
-          totalLoss: (returnData.totalActualLossCents || 0) / 100,
-          restockingFee: (returnData.restockingFeeCents || 0) / 100
-        });
+const ReturnDetailModal = ({ returnData }) => {
+  const [costBreakdown, setCostBreakdown] = useState(null);
+
+  useEffect(() => {
+    if (returnData) {
+      // Calculate actual costs from the return data
+      const shippingCost = (returnData.returnShippingCostCents || 0) / 100;
+      const labelCost = (returnData.returnlabelcostcents || 0) / 100;
+      const processingCost = 5; // Default $5 processing fee
+      const totalLoss = shippingCost + labelCost + processingCost;
+      
+      setCostBreakdown({
+        originalShipping: shippingCost,
+        returnLabel: labelCost,
+        processing: processingCost,
+        productLoss: 0, // Can be calculated based on product condition
+        totalLoss: totalLoss,
+        restockingFee: (returnData.restockingFeeCents || 0) / 100
+      });
+    }
+  }, [returnData]);
+
+  // Action handlers
+  const handleApprove = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/returns/${returnData.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status: 'approved',
+          approvedBy: 'admin'
+        })
+      });
+      
+      if (response.ok) {
+        alert('Return approved successfully!');
+        setSelectedReturn(null);
+        fetchReturns(); // Refresh the list
       }
-    }, [returnData]);
+    } catch (error) {
+      console.error('Failed to approve return:', error);
+      alert('Failed to approve return');
+    }
+  };
 
-    if (!returnData) return null;
+  const handleReject = async () => {
+    if (!window.confirm('Are you sure you want to reject this return?')) return;
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/returns/${returnData.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status: 'rejected',
+          approvedBy: 'admin'
+        })
+      });
+      
+      if (response.ok) {
+        alert('Return rejected');
+        setSelectedReturn(null);
+        fetchReturns();
+      }
+    } catch (error) {
+      console.error('Failed to reject return:', error);
+      alert('Failed to reject return');
+    }
+  };
 
-    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-        <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-white">Return #{returnData.returnNumber}</h2>
-              <p className="text-white/60">Created {new Date(returnData.createdAt).toLocaleDateString()}</p>
+  const handlePrintLabel = () => {
+    const labelWindow = window.open('', '_blank');
+    labelWindow.document.write(`
+      <html>
+        <head><title>Return Label - ${returnData.returnNumber}</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+          <h2>RETURN LABEL</h2>
+          <div style="border: 2px solid black; padding: 20px; margin: 20px 0;">
+            <h3>RMA #: ${returnData.returnNumber}</h3>
+            <p><strong>From:</strong><br>
+            ${returnData.customerEmail}<br>
+            Order: ${returnData.order?.number}</p>
+            <p><strong>To:</strong><br>
+            Your Company Name<br>
+            123 Return Center<br>
+            City, State 12345</p>
+          </div>
+          <p>Items: ${returnData.items?.length || 0}</p>
+          <p>Return Value: $${((returnData.totalReturnValueCents || 0) / 100).toFixed(2)}</p>
+        </body>
+      </html>
+    `);
+    labelWindow.document.close();
+    labelWindow.print();
+  };
+
+  const handleEmailCustomer = () => {
+    const subject = encodeURIComponent(`Return Update - ${returnData.returnNumber}`);
+    const body = encodeURIComponent(`
+Dear Customer,
+
+Your return request ${returnData.returnNumber} has been received.
+
+Order Number: ${returnData.order?.number}
+Return Status: ${returnData.status}
+Items: ${returnData.items?.length || 0}
+
+We will process your return within 3-5 business days.
+
+Thank you,
+Your Company Team
+    `);
+    
+    window.open(`mailto:${returnData.customerEmail}?subject=${subject}&body=${body}`);
+  };
+
+  if (!returnData) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Return #{returnData.returnNumber}</h2>
+            <p className="text-white/60">Created {new Date(returnData.createdAt).toLocaleDateString()}</p>
+          </div>
+          <button
+            onClick={() => setSelectedReturn(null)}
+            className="text-white/60 hover:text-white"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Return Information */}
+          <div className="space-y-4">
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <h3 className="text-white font-medium mb-3">Return Details</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-white/60">Status</span>
+                  <StatusBadge status={returnData.status} />
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/60">Order #</span>
+                  <span className="text-white">{returnData.order?.number}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/60">Customer</span>
+                  <span className="text-white">{returnData.customerEmail}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/60">Return Value</span>
+                  <span className="text-white font-medium">
+                    ${((returnData.totalReturnValueCents || 0) / 100).toFixed(2)}
+                  </span>
+                </div>
+              </div>
             </div>
-            <button
-              onClick={() => setSelectedReturn(null)}
-              className="text-white/60 hover:text-white"
-            >
-              <X className="w-6 h-6" />
-            </button>
+
+            {/* Items */}
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <h3 className="text-white font-medium mb-3">Items</h3>
+              <div className="space-y-2">
+                {returnData.items?.map((item, idx) => (
+                  <div key={idx} className="p-2 bg-white/5 rounded-lg">
+                    <p className="text-white text-sm font-medium">{item.productTitle}</p>
+                    <p className="text-white/60 text-xs">SKU: {item.sku}</p>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-white/60 text-xs">
+                        Qty: {item.quantityReturned} × ${((item.unitPriceCents || 0) / 100).toFixed(2)}
+                      </span>
+                      <span className="text-orange-400 text-xs">
+                        {item.reasonCategory?.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    {item.condition && (
+                      <div className="mt-1">
+                        <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-400 rounded">
+                          Condition: {item.condition}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Notes */}
+            {returnData.notes && (
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <h3 className="text-white font-medium mb-2">Notes</h3>
+                <p className="text-white/80 text-sm">{returnData.notes}</p>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Return Information */}
-            <div className="space-y-4">
-              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <h3 className="text-white font-medium mb-3">Return Details</h3>
+          {/* Cost Analysis & Actions */}
+          <div className="space-y-4">
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-red-400" />
+                Cost Breakdown
+              </h3>
+              {costBreakdown ? (
                 <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-white/60">Status</span>
-                    <StatusBadge status={returnData.status} />
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-white/60">Original Shipping</span>
+                    <span className="text-red-400">-${costBreakdown.originalShipping.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/60">Order #</span>
-                    <span className="text-white">{returnData.order?.number}</span>
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-white/60">Return Label</span>
+                    <span className="text-red-400">-${costBreakdown.returnLabel.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/60">Customer</span>
-                    <span className="text-white">{returnData.customerEmail}</span>
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-white/60">Processing Cost</span>
+                    <span className="text-red-400">-${costBreakdown.processing.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/60">Return Value</span>
-                    <span className="text-white font-medium">
-                      ${(returnData.totalReturnValueCents / 100).toFixed(2)}
-                    </span>
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-white/60">Product Value Loss</span>
+                    <span className="text-red-400">-${costBreakdown.productLoss.toFixed(2)}</span>
                   </div>
-                </div>
-              </div>
-
-              {/* Items */}
-              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <h3 className="text-white font-medium mb-3">Items</h3>
-                <div className="space-y-2">
-                  {returnData.items?.map((item, idx) => (
-                    <div key={idx} className="p-2 bg-white/5 rounded-lg">
-                      <p className="text-white text-sm font-medium">{item.productTitle}</p>
-                      <p className="text-white/60 text-xs">SKU: {item.sku}</p>
-                      <div className="flex justify-between mt-1">
-                        <span className="text-white/60 text-xs">
-                          Qty: {item.quantityReturned} • ${(item.unitPriceCents / 100).toFixed(2)} each
-                        </span>
-                        <span className="text-orange-400 text-xs">
-                          {item.reasonCategory?.replace('_', ' ')}
-                        </span>
-                      </div>
-                      {item.inspectedCondition && (
-                        <div className="mt-1">
-                          <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-400 rounded">
-                            Condition: {item.inspectedCondition}
-                          </span>
-                        </div>
-                      )}
+                  {costBreakdown.restockingFee > 0 && (
+                    <div className="flex justify-between py-2 border-b border-white/10">
+                      <span className="text-white/60">Restocking Fee</span>
+                      <span className="text-green-400">+${costBreakdown.restockingFee.toFixed(2)}</span>
                     </div>
-                  ))}
+                  )}
+                  <div className="flex justify-between py-2 font-bold">
+                    <span className="text-white">Total Loss</span>
+                    <span className="text-red-500 text-xl">-${costBreakdown.totalLoss.toFixed(2)}</span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="text-white/60 text-sm">Calculating costs...</p>
+              )}
             </div>
 
-            {/* Cost Analysis */}
-            <div className="space-y-4">
-              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-red-400" />
-                  Cost Breakdown
-                </h3>
-                {costBreakdown ? (
+            {/* Actions */}
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <h3 className="text-white font-medium mb-3">Actions</h3>
+              <div className="space-y-2">
+                {returnData.status === 'pending' && (
                   <>
-                    <div className="space-y-2">
-                      <div className="flex justify-between py-2 border-b border-white/10">
-                        <span className="text-white/60">Original Shipping</span>
-                        <span className="text-red-400">-${costBreakdown.originalShipping.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between py-2 border-b border-white/10">
-                        <span className="text-white/60">Return Label</span>
-                        <span className="text-red-400">-${costBreakdown.returnLabel.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between py-2 border-b border-white/10">
-                        <span className="text-white/60">Processing Cost</span>
-                        <span className="text-red-400">-${costBreakdown.processing.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between py-2 border-b border-white/10">
-                        <span className="text-white/60">Product Value Loss</span>
-                        <span className="text-red-400">-${costBreakdown.productLoss.toFixed(2)}</span>
-                      </div>
-                      {costBreakdown.restockingFee > 0 && (
-                        <div className="flex justify-between py-2 border-b border-white/10">
-                          <span className="text-white/60">Restocking Fee</span>
-                          <span className="text-green-400">+${costBreakdown.restockingFee.toFixed(2)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between py-2 font-bold">
-                        <span className="text-white">Total Loss</span>
-                        <span className="text-red-500 text-xl">-${costBreakdown.totalLoss.toFixed(2)}</span>
-                      </div>
-                    </div>
-                    
-                    {returnData.keepItRefund && (
-                      <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                        <p className="text-yellow-400 text-sm">
-                          ⚠️ Keep-It refund was recommended for this return
-                        </p>
-                      </div>
-                    )}
-
-                    {returnData.supplierChargebackCents > 0 && (
-                      <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                        <p className="text-green-400 text-sm">
-                          ✓ Supplier chargeback: ${(returnData.supplierChargebackCents / 100).toFixed(2)}
-                        </p>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-white/60 text-sm">Cost analysis pending...</p>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <h3 className="text-white font-medium mb-3">Actions</h3>
-                <div className="space-y-2">
-                  {returnData.status === 'pending' && (
-                    <>
-                      <button className="w-full px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg">
-                        Approve Return
-                      </button>
-                      <button className="w-full px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg">
-                        Reject Return
-                      </button>
-                    </>
-                  )}
-                  {returnData.status === 'approved' && (
-                    <button className="w-full px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg">
-                      Mark as Received
+                    <button 
+                      onClick={handleApprove}
+                      className="w-full px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-all"
+                    >
+                      Approve Return
                     </button>
-                  )}
-                  <button className="w-full px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg">
-                    Print Label
+                    <button 
+                      onClick={handleReject}
+                      className="w-full px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all"
+                    >
+                      Reject Return
+                    </button>
+                  </>
+                )}
+                {returnData.status === 'approved' && (
+                  <button className="w-full px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-all">
+                    Mark as Received
                   </button>
-                  <button className="w-full px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg">
-                    Email Customer
-                  </button>
-                </div>
+                )}
+                <button 
+                  onClick={handlePrintLabel}
+                  className="w-full px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg transition-all"
+                >
+                  Print Label
+                </button>
+                <button 
+                  onClick={handleEmailCustomer}
+                  className="w-full px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                >
+                  Email Customer
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Status badge component
   const StatusBadge = ({ status }) => {
