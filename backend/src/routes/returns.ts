@@ -167,8 +167,8 @@ router.post('/', async (req: Request, res: Response) => {
         // IMPORTANT: No productCondition at this level!
         items: {
           create: selectedItems.map((item: any) => ({
-            orderItemId: item.orderItemId,
-            productId: item.productId,
+            orderItem: item.orderItemId ? { connect: { id: item.orderItemId } } : undefined,
+            product: item.productId ? { connect: { id: item.productId } } : undefined,
             sku: item.sku || '',
             productTitle: item.productTitle || '',
             quantityReturned: item.quantityReturned || 1,
