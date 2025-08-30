@@ -142,6 +142,7 @@ model Return {
   createdBy                String?
   approvedBy               String?
   notes                    String?
+  totalActualLossCents  Int?     @default(0)  // Add this line
   
   items                    ReturnItem[]
   
