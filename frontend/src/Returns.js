@@ -1246,6 +1246,13 @@ const EditReturnModal = () => {
                     ${costAnalysis?.costBreakdown?.shipping?.toFixed(2) || '0'}
                   </span>
                 </div>
+
+                      <div className="flex justify-between">
+    <span className="text-white/60">Return Label Costs</span>
+    <span className="text-red-400 font-medium">
+      ${costAnalysis?.costBreakdown?.returnLabel?.toFixed(2) || '0'}
+    </span>
+  </div>
                 <div className="flex justify-between">
                   <span className="text-white/60">Processing Costs</span>
                   <span className="text-orange-400 font-medium">
