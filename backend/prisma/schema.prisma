@@ -135,7 +135,7 @@ model Return {
   refundAmountCents        Int?
   restockingFeeCents       Int         @default(0)
   returnShippingCostCents  Int         @default(0)
-  returnLabelCostCents     Int         @default(0)
+  returnlabelcostcents     Int         @default(0) @map("returnlabelcostcents")
   createdAt                DateTime    @default(now())
   approvedAt               DateTime?
   completedAt              DateTime?
