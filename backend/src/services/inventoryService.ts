@@ -70,7 +70,7 @@ export class InventoryService {
         where: { id: inventory.id },
         data: {
           quantity: inventory.quantity - quantity,
-          available: Math.max(0, inventory.available - quantity)
+          available: Math.max(0, (inventory.available || 0) - quantity)
         }
       });
     }
@@ -98,7 +98,6 @@ export class InventoryService {
       inventory = await prisma.inventory.create({
         data: {
           productId,
-          channelId: product.channelId,
           quantity,
           reserved: 0,
           available: quantity
@@ -109,7 +108,8 @@ export class InventoryService {
         where: { id: inventory.id },
         data: {
           quantity: inventory.quantity + quantity,
-          available: inventory.available + quantity
+          available: (inventory.available || 0) + quantity
+
         }
       });
     }
@@ -145,15 +145,15 @@ export class InventoryService {
       where: { productId }
     });
     
-    if (!inventory || inventory.available < quantity) {
+    if (!inventory || (inventory.available || 0) < quantity){
       throw new Error('Insufficient inventory available');
     }
     
     return await prisma.inventory.update({
       where: { id: inventory.id },
       data: {
-        reserved: inventory.reserved + quantity,
-        available: inventory.available - quantity
+reserved: (inventory.reserved || 0) + quantity,
+available: (inventory.available || 0) - quantity
       }
     });
   }
@@ -173,8 +173,8 @@ export class InventoryService {
     return await prisma.inventory.update({
       where: { id: inventory.id },
       data: {
-        reserved: Math.max(0, inventory.reserved - quantity),
-        available: inventory.available + quantity
+       reserved: Math.max(0, (inventory.reserved || 0) - quantity),
+available: (inventory.available || 0) + quantity
       }
     });
   }
@@ -187,14 +187,14 @@ export class InventoryService {
       where: { productId }
     });
     
-    if (!inventory || inventory.reserved < quantity) {
+    if (!inventory || (inventory.reserved || 0) < quantity) {
       throw new Error('Insufficient reserved inventory');
     }
     
     return await prisma.inventory.update({
       where: { id: inventory.id },
       data: {
-        reserved: inventory.reserved - quantity,
+        reserved: (inventory.reserved || 0) - quantity,
         quantity: inventory.quantity - quantity
       }
     });
@@ -218,7 +218,7 @@ export class InventoryService {
     
     const totalValue = products.reduce((sum, p) => {
       const qty = p.inventory?.quantity || 0;
-      const cost = p.costCents || 0;
+      const cost = p.priceCents || 0;
       return sum + (qty * cost);
     }, 0);
     
