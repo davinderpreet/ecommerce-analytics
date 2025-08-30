@@ -83,7 +83,7 @@ router.get('/', async (req: Request, res: Response) => {
         reorderDate: reorderDate.toISOString(),
         lastRestockDate: inventory?.lastRestockDate,
         nextRestockDate: inventory?.nextRestockDate,
-        supplierName: product.supplierName || 'Unknown',,
+        supplierName: product.supplierName || 'Unknown',
         supplierCountry: product.supplierCountry || 'Unknown',
         shippingMethod: product.shippingMethod || 'Sea'
       };
