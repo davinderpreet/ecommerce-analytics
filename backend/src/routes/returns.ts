@@ -14,16 +14,32 @@ const generateRMANumber = (): string => {
 };
 
 // GET /api/v1/returns/order/:orderNumber - Fetch order details by order number
+// backend/src/routes/returns.ts
+// UPDATE ONLY THIS ENDPOINT - Replace the existing GET /api/v1/returns/order/:orderNumber
+
+// GET /api/v1/returns/order/:orderNumber - Fetch order details by order number
 router.get('/order/:orderNumber', async (req: Request, res: Response) => {
   try {
-    const { orderNumber } = req.params;
+    let { orderNumber } = req.params;
     
-    // Find order with its items and products
+    // Decode any URL encoding
+    orderNumber = decodeURIComponent(orderNumber);
+    
+    // Remove # if user included it, we'll add it back
+    const cleanNumber = orderNumber.replace(/^#/, '').trim();
+    
+    // Always search with # prefix for the number field
+    const orderNumberWithHash = `#${cleanNumber}`;
+    
+    console.log(`Searching for order: ${cleanNumber} as ${orderNumberWithHash}`);
+    
+    // Find order - search both with # prefix and as channelRef
     const order = await prisma.order.findFirst({
       where: {
         OR: [
-          { number: orderNumber },
-          { channelRef: orderNumber }
+          { number: orderNumberWithHash },  // Primary search: #2202
+          { number: cleanNumber },          // Fallback: 2202 (in case some orders don't have #)
+          { channelRef: cleanNumber }       // Also check channelRef field
         ]
       },
       include: {
@@ -37,9 +53,11 @@ router.get('/order/:orderNumber', async (req: Request, res: Response) => {
     });
 
     if (!order) {
+      console.log(`Order not found: ${orderNumberWithHash}`);
       res.status(404).json({ 
         success: false, 
-        error: 'Order not found' 
+        error: 'Order not found',
+        searched: orderNumberWithHash
       });
       return;
     }
@@ -51,6 +69,8 @@ router.get('/order/:orderNumber', async (req: Request, res: Response) => {
         items: true
       }
     });
+
+    console.log(`Found order: ${order.number}`);
 
     res.json({
       success: true,
