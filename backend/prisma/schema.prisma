@@ -339,10 +339,11 @@ model SupplierProduct {
 // 3. Purchase Orders
 model PurchaseOrder {
   id               String         @id @default(cuid())
-  poNumber         String         @unique
+  orderNumber      String         @unique  // This is what the DB expects
+  poNumber         String?        // This is optional in DB
   supplierId       String
   status           POStatus       @default(DRAFT)
-  orderDate        DateTime       @default(now())
+  orderDate        DateTime?      @default(now())
   expectedDate     DateTime?
   shipDate         DateTime?
   receivedDate     DateTime?
@@ -367,9 +368,9 @@ model PurchaseOrder {
   supplier         Supplier       @relation(fields: [supplierId], references: [id])
   items            POItem[]
   movements        InventoryMovement[]
- @@map("purchase_orders")  // Add this line
+  
+  @@map("purchase_orders")
 }
-
 // 4. PO Line Items
 model POItem {
   id                   String    @id @default(cuid())
