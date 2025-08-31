@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SupplierManagement from './components/SupplierManagement';
 import { 
   Package, AlertTriangle, TrendingDown, ShoppingCart,
   RefreshCw, Download, Upload, Search, Filter, 
@@ -808,13 +809,10 @@ const Inventory = () => {
         )}
 
         {/* Suppliers Tab Content */}
-        {activeTab === 'suppliers' && (
-          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-12 border border-white/20 text-center">
-            <Users className="w-16 h-16 text-white/40 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-2">Supplier Management</h2>
-            <p className="text-white/60">Coming soon - Manage your suppliers and pricing</p>
-          </div>
-        )}
+    {activeTab === 'suppliers' && (
+  <SupplierManagement API_BASE={API_BASE} />
+)}
+
 
         {/* Purchase Orders Tab Content */}
         {activeTab === 'purchase-orders' && (
