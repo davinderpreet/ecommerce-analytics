@@ -243,3 +243,252 @@ model Predictions {
   
   @@map("predictions")
 }
+// Add these models to your existing schema.prisma file
+
+// 1. Enhanced Suppliers table
+model Supplier {
+  id                String           @id @default(cuid())
+  companyName       String
+  contactName       String?
+  email             String
+  phone             String?
+  address           String?
+  country           String?
+  currency          String           @default("USD")
+  paymentTerms      String?          // e.g., "Net 30", "Net 60"
+  leadTimeDays      Int              @default(7)
+  minimumOrderValue Decimal?         @db.Decimal(10, 2)
+  discountTiers     Json?            // JSON array of discount tiers
+  rating            Float?           @default(5.0)
+  notes             String?          @db.Text
+  bankDetails       String?
+  taxId             String?
+  contractEndDate   DateTime?
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  // Relations
+  products          SupplierProduct[]
+  purchaseOrders    PurchaseOrder[]
+}
+
+// 2. Supplier Products (price lists)
+model SupplierProduct {
+  id                String    @id @default(cuid())
+  supplierId        String
+  productId         String
+  supplierSku       String?
+  costPerUnit       Decimal   @db.Decimal(10, 2)
+  moq               Int       @default(1) // Minimum Order Quantity
+  leadTimeOverride  Int?      // Override supplier's default lead time
+  bulkPricingJson   Json?     // Tiered pricing structure
+  validFrom         DateTime  @default(now())
+  validUntil        DateTime?
+  isPreferred       Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  supplier          Supplier  @relation(fields: [supplierId], references: [id])
+  product           Product   @relation(fields: [productId], references: [id])
+  
+  @@unique([supplierId, productId])
+}
+
+// 3. Purchase Orders
+model PurchaseOrder {
+  id               String         @id @default(cuid())
+  poNumber         String         @unique
+  supplierId       String
+  status           POStatus       @default(DRAFT)
+  orderDate        DateTime       @default(now())
+  expectedDate     DateTime?
+  shipDate         DateTime?
+  receivedDate     DateTime?
+  paymentStatus    PaymentStatus  @default(PENDING)
+  paymentDate      DateTime?
+  subtotal         Decimal        @db.Decimal(10, 2)
+  freightCost      Decimal?       @db.Decimal(10, 2)
+  insuranceCost    Decimal?       @db.Decimal(10, 2)
+  customsDuty      Decimal?       @db.Decimal(10, 2)
+  otherFees        Decimal?       @db.Decimal(10, 2)
+  totalCost        Decimal        @db.Decimal(10, 2)
+  currency         String         @default("USD")
+  exchangeRate     Decimal?       @db.Decimal(10, 6)
+  shippingMethod   String?
+  trackingNumber   String?
+  invoiceNumber    String?
+  notes            String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  
+  // Relations
+  supplier         Supplier       @relation(fields: [supplierId], references: [id])
+  items            POItem[]
+  movements        InventoryMovement[]
+}
+
+// 4. PO Line Items
+model POItem {
+  id                   String    @id @default(cuid())
+  poId                 String
+  productId            String
+  supplierSku          String?
+  quantityOrdered      Int
+  quantityReceived     Int       @default(0)
+  quantityRejected     Int       @default(0)
+  unitCost             Decimal   @db.Decimal(10, 2)
+  freightAllocation    Decimal?  @db.Decimal(10, 2)
+  dutyAllocation       Decimal?  @db.Decimal(10, 2)
+  otherCostAllocation  Decimal?  @db.Decimal(10, 2)
+  landedUnitCost       Decimal?  @db.Decimal(10, 2)
+  expectedDate         DateTime?
+  receivedDate         DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  
+  // Relations
+  purchaseOrder        PurchaseOrder @relation(fields: [poId], references: [id])
+  product              Product       @relation(fields: [productId], references: [id])
+  batches              InventoryBatch[]
+}
+
+// 5. Inventory Locations
+model Location {
+  id                  String         @id @default(cuid())
+  name                String
+  type                LocationType
+  address             String?
+  manager             String?
+  phone               String?
+  capacityUnits       Int?
+  capacityCubicMeters Decimal?       @db.Decimal(10, 2)
+  operatingCostMonthly Decimal?      @db.Decimal(10, 2)
+  isActive            Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  
+  // Relations
+  batches             InventoryBatch[]
+  movements           InventoryMovement[]
+  stockCounts         StockCount[]
+  reorderRules        ReorderRule[]
+}
+
+// 6. Inventory Batches (for lot/batch tracking)
+model InventoryBatch {
+  id                 String        @id @default(cuid())
+  productId          String
+  locationId         String
+  poItemId           String?
+  batchNumber        String?
+  lotNumber          String?
+  quantityReceived   Int
+  quantityAvailable  Int
+  quantityReserved   Int           @default(0)
+  quantityQuarantine Int           @default(0)
+  unitCost           Decimal       @db.Decimal(10, 2)
+  landedCost         Decimal?      @db.Decimal(10, 2)
+  receivedDate       DateTime      @default(now())
+  expiryDate         DateTime?
+  qualityCheckStatus QCStatus      @default(PENDING)
+  qualityNotes       String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  
+  // Relations
+  product            Product       @relation(fields: [productId], references: [id])
+  location           Location      @relation(fields: [locationId], references: [id])
+  poItem             POItem?       @relation(fields: [poItemId], references: [id])
+  movements          InventoryMovement[]
+  
+  @@index([batchNumber])
+  @@index([expiryDate])
+}
+
+// 7. Inventory Movements (audit trail)
+model InventoryMovement {
+  id            String        @id @default(cuid())
+  productId     String
+  batchId       String?
+  locationFrom  String?
+  locationTo    String?
+  movementType  MovementType
+  quantity      Int
+  reason        String?
+  referenceType String?       // 'order', 'po', 'adjustment', 'transfer'
+  referenceId   String?       // ID of related order/PO/etc
+  costImpact    Decimal?      @db.Decimal(10, 2)
+  createdBy     String?
+  createdAt     DateTime      @default(now())
+  
+  // Relations
+  product       Product       @relation(fields: [productId], references: [id])
+  batch         InventoryBatch? @relation(fields: [batchId], references: [id])
+  fromLocation  Location?     @relation("FromLocation", fields: [locationFrom], references: [id])
+  toLocation    Location?     @relation("ToLocation", fields: [locationTo], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [referenceId], references: [id])
+  
+  @@index([createdAt])
+  @@index([movementType])
+}
+
+// 8. Stock Counts (for physical inventory)
+model StockCount {
+  id            String         @id @default(cuid())
+  locationId    String
+  countDate     DateTime       @default(now())
+  status        CountStatus    @default(IN_PROGRESS)
+  countedBy     String?
+  approvedBy    String?
+  varianceUnits Int?
+  varianceValue Decimal?       @db.Decimal(10, 2)
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  // Relations
+  location      Location       @relation(fields: [locationId], references: [id])
+  items         StockCountItem[]
+}
+
+// 9. Stock Count Items
+model StockCountItem {
+  id              String      @id @default(cuid())
+  stockCountId    String
+  productId       String
+  expectedQty     Int
+  countedQty      Int
+  varianceQty     Int
+  notes           String?
+  createdAt       DateTime    @default(now())
+  
+  // Relations
+  stockCount      StockCount  @relation(fields: [stockCountId], references: [id])
+  product         Product     @relation(fields: [productId], references: [id])
+}
+
+// 10. Reorder Rules
+model ReorderRule {
+  id               String    @id @default(cuid())
+  productId        String
+  locationId       String?
+  minStock         Int
+  maxStock         Int
+  reorderPoint     Int
+  reorderQuantity  Int
+  leadTimeDays     Int       @default(7)
+  safetyStockDays  Int       @default(3)
+  seasonalityFactor Decimal? @db.Decimal(3, 2) // 1.5 = 50% increase
+  isActive         Boolean   @default(true)
+  lastReviewed     DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  // Relations
+  product          Product   @relation(fields: [productId], references: [id])
+  location         Location? @relation(fields: [locationId], references: [id])
+  
+  @@unique([productId, locationId])
+}
