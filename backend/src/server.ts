@@ -1,6 +1,5 @@
 // backend/src/server.ts - COMPLETE FILE WITH INVENTORY MANAGEMENT
 import express, { Request, Response, NextFunction } from 'express';
-import supplierRoutes from './routes/suppliers';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
@@ -9,6 +8,7 @@ import inventoryRoutes from './routes/inventory';
 import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
 import returnsRoutes from './routes/returns';
+import supplierRoutes from './routes/suppliers';
 import productAnalyticsRoutes from './routes/product-analytics';
 import { syncShopifyOrders } from './integrations/shopify';
 
