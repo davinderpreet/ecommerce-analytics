@@ -411,11 +411,10 @@ model Location {
   
   // Relations
   batches             InventoryBatch[]
-  movements           InventoryMovement[]
   stockCounts         StockCount[]
   reorderRules        ReorderRule[]
-  movementsFrom     InventoryMovement[] @relation("FromLocation")
-  movementsTo       InventoryMovement[] @relation("ToLocation")
+  movementsFrom       InventoryMovement[] @relation("FromLocation")
+  movementsTo         InventoryMovement[] @relation("ToLocation")
 }
 
 // 6. Inventory Batches (for lot/batch tracking)
