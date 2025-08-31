@@ -1,4 +1,4 @@
-// backend/src/routes/inventory.ts - COMPLETE FIXED VERSION
+// backend/src/routes/inventory.ts - FIXED VERSION
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { inventoryService } from '../services/inventoryService';
@@ -59,96 +59,106 @@ router.get('/', async (req: Request, res: Response) => {
       const reorderPoint = Math.ceil(salesVelocity * (leadTime + safetyStock));
       const shouldReorderNow = currentQuantity <= reorderPoint;
       
-      const reorderDate = shouldReorderNow ? new Date() : 
-        new Date(Date.now() + ((currentQuantity - reorderPoint) / salesVelocity) * 24 * 60 * 60 * 1000);
+      // Calculate reorder date safely
+      let reorderDate = null;
+      let reorderDateStr = null;
+      
+      if (shouldReorderNow) {
+        reorderDate = new Date();
+      } else if (salesVelocity > 0) {
+        const daysUntilReorder = Math.max(0, (currentQuantity - reorderPoint) / salesVelocity);
+        reorderDate = new Date(Date.now() + daysUntilReorder * 24 * 60 * 60 * 1000);
+      }
+      
+      // Only convert to ISO string if date is valid
+      if (reorderDate && !isNaN(reorderDate.getTime())) {
+        reorderDateStr = reorderDate.toISOString();
+      }
+      
+      // Calculate next restock date safely
+      let nextRestockDateStr = null;
+      if (inventory?.nextRestockDate) {
+        const nextRestockDate = new Date(inventory.nextRestockDate);
+        if (!isNaN(nextRestockDate.getTime())) {
+          nextRestockDateStr = nextRestockDate.toISOString();
+        }
+      }
+      
+      // Calculate last restock date safely
+      let lastRestockDateStr = null;
+      if (inventory?.lastRestockDate) {
+        const lastRestockDate = new Date(inventory.lastRestockDate);
+        if (!isNaN(lastRestockDate.getTime())) {
+          lastRestockDateStr = lastRestockDate.toISOString();
+        }
+      }
       
       return {
         id: product.id,
         sku: product.sku,
         title: product.title,
-        channel: product.channel.name,
+        platform: product.channel?.name || 'Unknown',
+        channelCode: product.channel?.code || 'unknown',
         quantity: currentQuantity,
+        available: inventory?.available || 0,
         reserved: inventory?.reserved || 0,
-        available: inventory?.available || currentQuantity,
+        incoming: inventory?.incoming || 0,
         salesVelocity: Math.round(salesVelocity * 10) / 10,
         daysUntilStockout,
         stockoutRisk,
         reorderPoint,
-        reorderQuantity: inventory?.reorderQuantity || product.moq || 100,
-        leadTimeDays: leadTime,
-        moq: product.moq || 100,
-        batchSize: product.batchSize || 50,
-        safetyStockDays: safetyStock,
+        reorderQuantity: product.batchSize || inventory?.reorderQuantity || 100,
         shouldReorderNow,
-        reorderDate: reorderDate.toISOString(),
-        lastRestockDate: inventory?.lastRestockDate,
-        nextRestockDate: inventory?.nextRestockDate,
-        supplierName: product.supplierName || 'Unknown',
-        supplierCountry: product.supplierCountry || 'Unknown',
-        shippingMethod: product.shippingMethod || 'Sea'
+        reorderDate: reorderDateStr,
+        leadTime,
+        batchSize: product.batchSize || 50,
+        moq: product.moq || 100,
+        safetyStock,
+        supplierName: product.supplierName || 'Default Supplier',
+        supplierCountry: product.supplierCountry || 'China',
+        shippingMethod: product.shippingMethod || 'Sea',
+        lastRestockDate: lastRestockDateStr,
+        nextRestockDate: nextRestockDateStr,
+        inventoryId: inventory?.id || null
       };
     }));
     
-    // Apply filters
-    let filteredItems = inventoryItems;
-    if (filter === 'low-stock') {
-      filteredItems = inventoryItems.filter(item => 
-        item.stockoutRisk === 'critical' || item.stockoutRisk === 'high'
-      );
-    } else if (filter === 'reorder') {
-      filteredItems = inventoryItems.filter(item => item.shouldReorderNow);
-    } else if (filter === 'out-of-stock') {
-      filteredItems = inventoryItems.filter(item => item.quantity === 0);
+    // Sort based on query parameter
+    let sortedItems = [...inventoryItems];
+    switch (sortBy) {
+      case 'quantity':
+        sortedItems.sort((a, b) => a.quantity - b.quantity);
+        break;
+      case 'days_until_stockout':
+        sortedItems.sort((a, b) => a.daysUntilStockout - b.daysUntilStockout);
+        break;
+      case 'risk':
+      default:
+        const riskOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+        sortedItems.sort((a, b) => riskOrder[a.stockoutRisk] - riskOrder[b.stockoutRisk]);
     }
     
-    // Sort results
-    filteredItems.sort((a, b) => {
-      if (sortBy === 'risk') {
-        const riskOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-        return riskOrder[a.stockoutRisk as keyof typeof riskOrder] - 
-               riskOrder[b.stockoutRisk as keyof typeof riskOrder];
-      } else if (sortBy === 'quantity') {
-        return a.quantity - b.quantity;
-      } else if (sortBy === 'velocity') {
-        return b.salesVelocity - a.salesVelocity;
-      }
-      return 0;
-    });
-    
-    // Calculate stats
+    // Calculate summary stats
     const stats = {
       totalProducts: inventoryItems.length,
-      outOfStock: inventoryItems.filter(i => i.quantity === 0).length,
-      lowStock: inventoryItems.filter(i => i.stockoutRisk === 'high' || i.stockoutRisk === 'critical').length,
-      needsReorder: inventoryItems.filter(i => i.shouldReorderNow).length,
-      totalValue: inventoryItems.reduce((sum, item) => sum + (item.quantity * 100), 0) // Placeholder value
+      totalValue: inventoryItems.reduce((sum, item) => sum + (item.quantity * 50), 0), // Placeholder value
+      lowStockItems: inventoryItems.filter(item => item.stockoutRisk === 'high' || item.stockoutRisk === 'critical').length,
+      criticalItems: inventoryItems.filter(item => item.stockoutRisk === 'critical').length,
+      outOfStock: inventoryItems.filter(item => item.quantity === 0).length
     };
-    
-    // Generate alerts
-    const alerts = filteredItems
-      .filter(item => item.stockoutRisk === 'critical' || item.stockoutRisk === 'high')
-      .map(item => ({
-        id: item.id,
-        sku: item.sku,
-        title: item.title,
-        severity: item.stockoutRisk,
-        message: item.quantity === 0 
-          ? `OUT OF STOCK! Order immediately!`
-          : item.shouldReorderNow
-          ? `Time to reorder! Only ${item.quantity} units left (${item.daysUntilStockout} days remaining)`
-          : item.stockoutRisk === 'critical' 
-          ? `Critical: ${item.quantity} units left (${item.daysUntilStockout} days). Reorder by ${item.reorderDate ? new Date(item.reorderDate).toLocaleDateString() : 'NOW'}`
-          : `Low stock: ${item.quantity} units (${item.daysUntilStockout} days supply)`,
-        action: item.shouldReorderNow ? 'REORDER_NOW' : 'MONITOR',
-        suggestedQuantity: item.reorderQuantity,
-        reorderDate: item.reorderDate
-      }));
     
     res.json({
       success: true,
-      items: filteredItems,
+      data: sortedItems,
       stats,
-      alerts
+      alerts: sortedItems.filter(item => item.shouldReorderNow).map(item => ({
+        productId: item.id,
+        sku: item.sku,
+        title: item.title,
+        currentStock: item.quantity,
+        reorderPoint: item.reorderPoint,
+        message: `Time to reorder ${item.title} - Stock at ${item.quantity} units`
+      }))
     });
     
   } catch (error: any) {
@@ -160,96 +170,18 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/inventory/:productId/settings - Update product settings
-router.post('/:productId/settings', async (req: Request, res: Response) => {
-  try {
-    const { productId } = req.params;
-    const settings = req.body;
-    
-    const updatedProduct = await prisma.product.update({
-      where: { id: productId },
-      data: {
-        leadTimeDays: settings.leadTimeDays,
-        moq: settings.moq,
-        batchSize: settings.batchSize,
-        safetyStockDays: settings.safetyStockDays,
-        supplierName: settings.supplierName,
-        supplierCountry: settings.supplierCountry,
-        shippingMethod: settings.shippingMethod
-      }
-    });
-    
-    res.json({ 
-      success: true,
-      message: 'Product settings updated successfully',
-      product: updatedProduct
-    });
-  } catch (error: any) {
-    console.error('Product settings update error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Failed to update product settings'
-    });
-  }
-});
-
 // POST /api/v1/inventory/:productId/update - Update inventory quantity
 router.post('/:productId/update', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
-    const { quantity, type = 'set' } = req.body; // type: 'set', 'add', 'subtract'
+    const { quantity } = req.body;
     
-    let inventory = await prisma.inventory.findUnique({
-      where: { productId }
-    });
-    
-    if (!inventory) {
-      // Get product to get channelId
-      const product = await prisma.product.findUnique({
-        where: { id: productId }
-      });
-      
-      if (!product) {
-        res.status(404).json({ 
-          success: false, 
-          error: 'Product not found' 
-        });
-        return;
-      }
-      
-      // Create new inventory record
-      inventory = await prisma.inventory.create({
-        data: {
-          productId,
-          quantity: 0,
-          reserved: 0,
-          available: 0
-        }
-      });
-    }
-    
-    // Calculate new quantity based on type
-    let newQuantity = quantity;
-    if (type === 'add') {
-      newQuantity = inventory.quantity + quantity;
-    } else if (type === 'subtract') {
-      newQuantity = Math.max(0, inventory.quantity - quantity);
-    }
-    
-    // Update inventory
-    const updatedInventory = await prisma.inventory.update({
-      where: { id: inventory.id },
-      data: {
-        quantity: newQuantity,
-        available: newQuantity - (inventory.reserved || 0),
-        lastRestockDate: type === 'add' ? new Date() : inventory.lastRestockDate
-      }
-    });
+    const inventory = await inventoryService.updateInventory(productId, quantity);
     
     res.json({
       success: true,
-      message: `Inventory updated successfully`,
-      inventory: updatedInventory
+      message: 'Inventory updated successfully',
+      data: inventory
     });
     
   } catch (error: any) {
@@ -261,95 +193,65 @@ router.post('/:productId/update', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/inventory/restock - Bulk restock
-router.post('/restock', async (req: Request, res: Response) => {
+// POST /api/v1/inventory/seed - Seed inventory with test data
+router.post('/seed', async (req: Request, res: Response) => {
   try {
-    const { items } = req.body; // Array of { sku, quantity }
-    
-    if (!items || !Array.isArray(items)) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Items array is required' 
-      });
-      return;
-    }
-    
-    const results = [];
-    
-    // Get channel (assuming Shopify for now)
-    const channel = await prisma.channel.findFirst({
-      where: { code: 'shopify' }
+    const products = await prisma.product.findMany({
+      where: { active: true },
+      include: { inventory: true }
     });
     
-    if (!channel) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Channel not found' 
-      });
-      return;
-    }
+    let created = 0;
+    let updated = 0;
     
-    for (const item of items) {
-      // FIXED: Use findFirst instead of findUnique for sku lookup
-      const product = await prisma.product.findFirst({
-        where: { 
-          sku: item.sku,
-          channelId: channel.id
-        }
-      });
+    for (const product of products) {
+      const randomQuantity = Math.floor(Math.random() * 200) + 50;
+      const randomReserved = Math.floor(Math.random() * 20);
+      const randomIncoming = Math.floor(Math.random() * 100);
       
-      if (!product) {
-        results.push({ 
-          sku: item.sku, 
-          success: false, 
-          error: 'Product not found' 
-        });
-        continue;
-      }
-      
-      let inventory = await prisma.inventory.findUnique({
-        where: { productId: product.id }
-      });
-      
-      if (!inventory) {
-        // FIXED: Add required channelId when creating inventory
-        inventory = await prisma.inventory.create({
+      if (!product.inventory) {
+        await prisma.inventory.create({
           data: {
             productId: product.id,
-            quantity: item.quantity,
-            reserved: 0,
-            available: item.quantity
+            quantity: randomQuantity,
+            available: randomQuantity - randomReserved,
+            reserved: randomReserved,
+            incoming: randomIncoming,
+            reorderPoint: 20,
+            reorderQuantity: 100,
+            leadTimeDays: 7 + Math.floor(Math.random() * 14),
+            safetyStock: 10 + Math.floor(Math.random() * 20),
+            minOrderQuantity: 50,
+            lastRestockDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+            nextRestockDate: new Date(Date.now() + Math.random() * 14 * 24 * 60 * 60 * 1000),
+            notes: 'Auto-generated inventory record'
           }
         });
+        created++;
       } else {
-        inventory = await prisma.inventory.update({
-          where: { id: inventory.id },
+        await prisma.inventory.update({
+          where: { id: product.inventory.id },
           data: {
-            quantity: inventory.quantity + item.quantity,
-            available: inventory.available + item.quantity,
-            lastRestockDate: new Date()
+            quantity: randomQuantity,
+            available: randomQuantity - randomReserved,
+            reserved: randomReserved,
+            incoming: randomIncoming
           }
         });
+        updated++;
       }
-      
-      results.push({
-        sku: item.sku,
-        success: true,
-        newQuantity: inventory.quantity
-      });
     }
     
     res.json({
       success: true,
-      message: `Processed ${results.length} items`,
-      results
+      message: `Inventory seeded: ${created} created, ${updated} updated`
     });
     
   } catch (error: any) {
-    console.error('Bulk restock error:', error);
+    console.error('Inventory seed error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message || 'Failed to process restock' 
+      error: error.message || 'Failed to seed inventory' 
     });
   }
 });
@@ -357,8 +259,6 @@ router.post('/restock', async (req: Request, res: Response) => {
 // POST /api/v1/inventory/sync-shopify - Sync inventory from Shopify
 router.post('/sync-shopify', async (req: Request, res: Response) => {
   try {
-    console.log('🔄 Syncing inventory from Shopify...');
-    
     const SHOP = process.env.SHOPIFY_SHOP_DOMAIN!;
     const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN!;
     const API_VER = '2024-07';
@@ -457,7 +357,7 @@ router.post('/sync-shopify', async (req: Request, res: Response) => {
               where: { id: inventory.id },
               data: {
                 quantity: variant.inventoryQuantity,
-               available: (inventory.available || 0) - (inventory.reserved || 0)
+                available: variant.inventoryQuantity - (inventory.reserved || 0)
               }
             });
           }
