@@ -28,8 +28,8 @@ app.use(express.json());
 app.use('/api/v1/scheduler', schedulerRoutes);
 app.use('/api/v1/inventory', inventoryRoutes);
 app.use('/api/v1/products', productsRoutes);  // ADD THIS LINE - Products endpoint
-app.use('/api/v2/inventory/suppliers', supplierRoutes);  // FIX: Add /suppliers to path
-app.use('/api/v2/inventory', purchaseOrderRoutes);  // Keep purchase orders at base path
+app.use('/api/v2/inventory', supplierRoutes);  // Keep suppliers at base /api/v2/inventory
+app.use('/api/v2/inventory', purchaseOrderRoutes);  // Purchase orders also at /api/v2/inventory
 app.use('/api/v1/returns', returnsRoutes);
 app.use('/api/v1/analytics', productAnalyticsRoutes);
 
