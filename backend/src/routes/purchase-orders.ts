@@ -265,50 +265,73 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
     // Generate PO number
     const poNumber = await generatePONumber();
 
-    // Debug: Log what we're trying to create
-    console.log('Creating PO with data:', {
-      poNumber,
-      supplierId,
-      status: 'DRAFT',
-      orderDate: new Date(),
-      subtotal,
-      freightCost: freightCostNum,
-      totalCost,
-      currency: 'USD',
-      expectedDate: expectedDate ? new Date(expectedDate) : null,
-      notes,
-      shippingMethod
-    });
-
     // Create PO with items
-    // TEMPORARY FIX: Add orderNumber field to satisfy database constraint
-    const purchaseOrder = await prisma.purchaseOrder.create({
-      data: {
+    const purchaseOrder = await prisma.$executeRawUnsafe(`
+      INSERT INTO purchase_orders (
+        id, "orderNumber", "poNumber", "supplierId", 
+        status, subtotal, "freightCost", "totalCost",
+        currency, "expectedDate", notes, "shippingMethod",
+        "orderDate", "createdAt", "updatedAt"
+      ) VALUES (
+        gen_random_uuid(), $1, $2, $3, 
+        $4::postatus, $5, $6, $7, 
+        $8, $9, $10, $11,
+        $12, NOW(), NOW()
+      ) RETURNING *
+    `,
+      poNumber,  // orderNumber
+      poNumber,  // poNumber
+      supplierId,
+      'DRAFT',
+      subtotal,
+      freightCostNum,
+      totalCost,
+      'USD',
+      expectedDate ? new Date(expectedDate) : null,
+      notes || '',
+      shippingMethod || '',
+      new Date()  // orderDate
+    );
+
+    // Create items separately
+    for (const item of itemsWithAllocation) {
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO purchase_order_items (
+          id, "poId", "productId", "supplierSku",
+          "quantityOrdered", "quantityReceived", "unitCost",
+          "freightAllocation", "landedUnitCost",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          gen_random_uuid(), 
+          (SELECT id FROM purchase_orders WHERE "orderNumber" = $1 LIMIT 1),
+          $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()
+        )
+      `,
         poNumber,
-        orderNumber: poNumber,  // ADD THIS: Use same value as poNumber
-        supplierId,
-        status: 'DRAFT',
-        orderDate: new Date(),  // Explicitly set orderDate
-        subtotal,
-        freightCost: freightCostNum,
-        totalCost,
-        currency: 'USD',
-        expectedDate: expectedDate ? new Date(expectedDate) : null,
-        notes,
-        shippingMethod,
-        items: {
-          create: itemsWithAllocation
-        }
-      } as any,  // Use 'as any' to bypass TypeScript checking for the extra field
-      include: {
-        supplier: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      }
-    });
+        item.productId,
+        item.supplierSku,
+        item.quantityOrdered,
+        item.quantityReceived,
+        item.unitCost,
+        item.freightAllocation || 0,
+        item.landedUnitCost || item.unitCost
+      );
+    }
+
+    // Fetch the created PO with relations
+    const createdPO = await prisma.$queryRawUnsafe(`
+      SELECT 
+        po.*,
+        s."companyName" as supplier_name,
+        COUNT(poi.id) as item_count
+      FROM purchase_orders po
+      LEFT JOIN suppliers s ON po."supplierId" = s.id
+      LEFT JOIN purchase_order_items poi ON poi."poId" = po.id
+      WHERE po."orderNumber" = $1
+      GROUP BY po.id, s."companyName"
+    `, poNumber);
+
+    const result = createdPO[0] || null;
 
     // Convert Decimal values to numbers for JSON serialization
     const serializedPO = {
