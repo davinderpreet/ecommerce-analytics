@@ -68,7 +68,7 @@ const CreatePOModal = ({ show, onClose, onSuccess, API_BASE }) => {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/v2/inventory/suppliers`);
+      const response = await fetch(`${API_BASE}/api/v2/inventory/suppliers/suppliers`);
       const data = await response.json();
       if (data.success) {
         setSuppliers(data.data || []);
