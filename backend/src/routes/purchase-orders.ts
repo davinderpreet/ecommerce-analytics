@@ -1,6 +1,7 @@
 // backend/src/routes/purchase-orders.ts
 import { Router, Request, Response } from 'express';
-import { PrismaClient, Decimal } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 
 const router = Router();
 const prisma = new PrismaClient();
