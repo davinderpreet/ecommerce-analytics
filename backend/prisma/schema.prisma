@@ -304,19 +304,13 @@ model Supplier {
   isActive          Boolean          @default(true)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
-  minimumOrderValue Decimal?         @db.Decimal(10, 2)
-  discountTiers     Json?            
-  rating            Float?           @default(5.0)
-  bankDetails       String?
-  taxId             String?
-  contractEndDate   DateTime?
-  currency          String           @default("USD")
   
   // Relations
   products          SupplierProduct[]
   purchaseOrders    PurchaseOrder[]
+  
+  @@map("suppliers")
 }
-
 // 2. Supplier Products (price lists)
 model SupplierProduct {
   id                String    @id @default(cuid())
