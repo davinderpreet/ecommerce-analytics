@@ -55,7 +55,7 @@ router.get('/', async (req: Request, res: Response) => {
       id: product.id,
       title: product.title,
       sku: product.sku,
-      price: parseFloat(product.price?.toString() || '0'),
+      price: product.priceCents ? product.priceCents / 100 : 0,  // Convert cents to dollars
       platform: product.channel?.code || 'shopify',
       inventoryQuantity: product.inventory?.quantity || 0,
       available: product.inventory?.available || 0
@@ -109,7 +109,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         id: product.id,
         title: product.title,
         sku: product.sku,
-        price: parseFloat(product.price?.toString() || '0'),
+        price: product.priceCents ? product.priceCents / 100 : 0,  // Convert cents to dollars
         platform: product.channel?.code || 'shopify',
         inventoryQuantity: product.inventory?.quantity || 0,
         available: product.inventory?.available || 0,
