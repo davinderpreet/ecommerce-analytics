@@ -176,7 +176,31 @@ router.post('/:productId/update', async (req: Request, res: Response) => {
     const { productId } = req.params;
     const { quantity } = req.body;
     
-    const inventory = await inventoryService.updateInventory(productId, quantity);
+    // Find existing inventory or create new one
+    let inventory = await prisma.inventory.findUnique({
+      where: { productId }
+    });
+    
+    if (!inventory) {
+      // Create new inventory record
+      inventory = await prisma.inventory.create({
+        data: {
+          productId,
+          quantity: parseInt(quantity),
+          reserved: 0,
+          available: parseInt(quantity)
+        }
+      });
+    } else {
+      // Update existing inventory
+      inventory = await prisma.inventory.update({
+        where: { id: inventory.id },
+        data: {
+          quantity: parseInt(quantity),
+          available: parseInt(quantity) - (inventory.reserved || 0)
+        }
+      });
+    }
     
     res.json({
       success: true,
