@@ -1,5 +1,6 @@
 // backend/src/server.ts - COMPLETE FILE WITH INVENTORY MANAGEMENT
 import express, { Request, Response, NextFunction } from 'express';
+import supplierRoutes from './routes/suppliers';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
@@ -24,6 +25,7 @@ app.use(express.json());
 // Routes
 app.use('/api/v1/scheduler', schedulerRoutes);
 app.use('/api/v1/inventory', inventoryRoutes);
+app.use('/api/v2/inventory', supplierRoutes);
 app.use('/api/v1/returns', returnsRoutes);
 app.use('/api/v1/analytics', productAnalyticsRoutes);
 
@@ -349,6 +351,15 @@ app.get('/', (req: Request, res: Response) => {
       // Add these inventory endpoints
       'GET /api/v1/inventory - Get all inventory items with metrics',
       'POST /api/v1/inventory/:productId/update - Update inventory quantity',
+        'GET /api/v2/inventory/suppliers - List all suppliers',
+  'GET /api/v2/inventory/suppliers/:id - Get supplier details',
+  'POST /api/v2/inventory/suppliers - Create new supplier',
+  'PUT /api/v2/inventory/suppliers/:id - Update supplier',
+  'DELETE /api/v2/inventory/suppliers/:id - Deactivate supplier',
+  'GET /api/v2/inventory/suppliers/:id/products - Get supplier product catalog',
+  'POST /api/v2/inventory/suppliers/:id/products - Add product to supplier',
+  'DELETE /api/v2/inventory/suppliers/:id/products/:productId - Remove product from supplier',
+  'GET /api/v2/inventory/suppliers/:id/performance - Get supplier metrics',
       'POST /api/v1/inventory/sync - Sync inventory (placeholder)'
     ]
   });
