@@ -268,26 +268,6 @@ model User {
   
   @@map("users")
 }
-
-model Supplier {
-  id            String   @id @default(cuid())
-  name          String
-  code          String?
-  contactName   String?  @map("contact_name")
-  email         String?
-  phone         String?
-  address       String?
-  website       String?
-  leadTimeDays  Int?     @default(7) @map("lead_time_days")
-  paymentTerms  String?  @map("payment_terms")
-  notes         String?
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  
-  @@map("suppliers")
-}
-
 model Predictions {
   id               String   @id @default(cuid())
   date             DateTime
