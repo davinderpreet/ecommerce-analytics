@@ -1,4 +1,4 @@
-// backend/src/routes/suppliers.ts - FIXED WITH CORRECT FIELD NAMES
+// backend/src/routes/suppliers.ts - USING PRISMA SCHEMA FIELD NAMES
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 
@@ -13,19 +13,7 @@ router.get('/suppliers', async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: suppliers.map(s => ({
-        id: s.id,
-        companyName: s.name, // Map 'name' to 'companyName' for frontend
-        contactName: s.contactName,
-        email: s.email,
-        phone: s.phone,
-        address: s.address,
-        website: s.website,
-        country: null, // Not in current DB
-        currency: 'USD',
-        paymentTerms: s.paymentTerms,
-        leadTimeDays: s.leadTimeDays || 7,
-        isActive: s.isActive,
-        notes: s.notes,
+        ...s,
         _count: { products: 0, purchaseOrders: 0 }
       }))
     });
@@ -54,19 +42,7 @@ router.get('/suppliers/:id', async (req: Request, res: Response) => {
     } else {
       res.json({
         success: true,
-        data: {
-          id: supplier.id,
-          companyName: supplier.name,
-          contactName: supplier.contactName,
-          email: supplier.email,
-          phone: supplier.phone,
-          address: supplier.address,
-          website: supplier.website,
-          paymentTerms: supplier.paymentTerms,
-          leadTimeDays: supplier.leadTimeDays,
-          isActive: supplier.isActive,
-          notes: supplier.notes
-        }
+        data: supplier
       });
     }
   } catch (error: any) {
@@ -81,14 +57,19 @@ router.get('/suppliers/:id', async (req: Request, res: Response) => {
 router.post('/suppliers', async (req: Request, res: Response) => {
   try {
     const {
-      companyName, // Frontend sends companyName
+      companyName,
       contactName,
       email,
       phone,
       address,
+      country,
+      currency,
       paymentTerms,
       leadTimeDays,
-      notes
+      minimumOrderValue,
+      notes,
+      bankDetails,
+      taxId
     } = req.body;
 
     if (!companyName || !email) {
@@ -99,14 +80,19 @@ router.post('/suppliers', async (req: Request, res: Response) => {
     } else {
       const supplier = await prisma.supplier.create({
         data: {
-          name: companyName, // Map to 'name' for database
+          companyName,
           contactName,
           email,
           phone,
           address,
+          country,
+          currency: currency || 'USD',
           paymentTerms,
           leadTimeDays: leadTimeDays || 7,
+          minimumOrderValue: minimumOrderValue ? parseFloat(minimumOrderValue) : null,
           notes,
+          bankDetails,
+          taxId,
           isActive: true
         }
       });
@@ -114,17 +100,7 @@ router.post('/suppliers', async (req: Request, res: Response) => {
       res.status(201).json({
         success: true,
         message: 'Supplier created successfully',
-        data: {
-          id: supplier.id,
-          companyName: supplier.name,
-          contactName: supplier.contactName,
-          email: supplier.email,
-          phone: supplier.phone,
-          address: supplier.address,
-          paymentTerms: supplier.paymentTerms,
-          leadTimeDays: supplier.leadTimeDays,
-          isActive: supplier.isActive
-        }
+        data: supplier
       });
     }
   } catch (error: any) {
@@ -140,26 +116,18 @@ router.post('/suppliers', async (req: Request, res: Response) => {
 router.put('/suppliers/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const {
-      companyName,
-      contactName,
-      email,
-      phone,
-      address,
-      paymentTerms,
-      leadTimeDays,
-      notes
-    } = req.body;
-
-    const updateData: any = {};
-    if (companyName !== undefined) updateData.name = companyName;
-    if (contactName !== undefined) updateData.contactName = contactName;
-    if (email !== undefined) updateData.email = email;
-    if (phone !== undefined) updateData.phone = phone;
-    if (address !== undefined) updateData.address = address;
-    if (paymentTerms !== undefined) updateData.paymentTerms = paymentTerms;
-    if (leadTimeDays !== undefined) updateData.leadTimeDays = parseInt(leadTimeDays);
-    if (notes !== undefined) updateData.notes = notes;
+    const updateData = req.body;
+    
+    // Remove id from update data
+    delete updateData.id;
+    
+    // Convert types if needed
+    if (updateData.leadTimeDays) {
+      updateData.leadTimeDays = parseInt(updateData.leadTimeDays);
+    }
+    if (updateData.minimumOrderValue) {
+      updateData.minimumOrderValue = parseFloat(updateData.minimumOrderValue);
+    }
 
     const supplier = await prisma.supplier.update({
       where: { id },
@@ -169,17 +137,7 @@ router.put('/suppliers/:id', async (req: Request, res: Response) => {
     res.json({
       success: true,
       message: 'Supplier updated successfully',
-      data: {
-        id: supplier.id,
-        companyName: supplier.name,
-        contactName: supplier.contactName,
-        email: supplier.email,
-        phone: supplier.phone,
-        address: supplier.address,
-        paymentTerms: supplier.paymentTerms,
-        leadTimeDays: supplier.leadTimeDays,
-        isActive: supplier.isActive
-      }
+      data: supplier
     });
   } catch (error: any) {
     if (error.code === 'P2025') {
