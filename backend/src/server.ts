@@ -9,6 +9,7 @@ import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
 import returnsRoutes from './routes/returns';
 import supplierRoutes from './routes/suppliers';
+import productsRoutes from './routes/products';
 import purchaseOrderRoutes from './routes/purchase-orders';
 import productAnalyticsRoutes from './routes/product-analytics';
 import { syncShopifyOrders } from './integrations/shopify';
