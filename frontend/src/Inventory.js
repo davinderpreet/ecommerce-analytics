@@ -5,7 +5,10 @@ import {
   Plus, Edit2, Bell, Clock, Truck, ChevronRight,
   BarChart2, AlertCircle, CheckCircle, XCircle,
   ArrowUp, ArrowDown, Settings, Calendar, Info,
-  Save, X, Edit, Boxes, Timer
+  Save, X, Edit, Boxes, Timer,
+  // New imports for tabs
+  Users, FileText, TrendingUp, DollarSign, Building2,
+  Phone, Mail, Globe, CreditCard, MapPin
 } from 'lucide-react';
 
 // Configuration
