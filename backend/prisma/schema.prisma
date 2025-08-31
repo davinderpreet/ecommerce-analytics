@@ -8,6 +8,57 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+// 1. ENUMS - Add these at the top of your schema file after datasource
+enum POStatus {
+  DRAFT
+  SENT
+  CONFIRMED
+  SHIPPED
+  PARTIAL_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum LocationType {
+  WAREHOUSE
+  STORE
+  FBA
+  THIRD_PARTY_LOGISTICS
+  CONSIGNMENT
+}
+
+enum QCStatus {
+  PENDING
+  PASSED
+  FAILED
+  PARTIAL
+}
+
+enum MovementType {
+  RECEIPT
+  SHIPMENT
+  TRANSFER
+  ADJUSTMENT
+  RETURN
+  DAMAGE
+  EXPIRY
+}
+
+enum CountStatus {
+  IN_PROGRESS
+  COMPLETED
+  APPROVED
+  CANCELLED
+}
+
 
 model Channel {
   id        String   @id @default(cuid())
@@ -47,6 +98,12 @@ model Product {
   inventory         Inventory?
   orderItems        OrderItem[]
   returnItems       ReturnItem[]
+  supplierProducts  SupplierProduct[]
+  poItems           POItem[]
+  batches           InventoryBatch[]
+  movements         InventoryMovement[]
+  stockCountItems   StockCountItem[]
+  reorderRules      ReorderRule[]
   
   @@unique([channelId, sku])
   @@index([sku])
@@ -267,6 +324,13 @@ model Supplier {
   isActive          Boolean          @default(true)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  minimumOrderValue Decimal?         @db.Decimal(10, 2)
+  discountTiers     Json?            
+  rating            Float?           @default(5.0)
+  bankDetails       String?
+  taxId             String?
+  contractEndDate   DateTime?
+  currency          String           @default("USD")
   
   // Relations
   products          SupplierProduct[]
@@ -294,6 +358,8 @@ model SupplierProduct {
   product           Product   @relation(fields: [productId], references: [id])
   
   @@unique([supplierId, productId])
+ @@index([supplierId])
+  @@index([productId])
 }
 
 // 3. Purchase Orders
@@ -374,6 +440,8 @@ model Location {
   movements           InventoryMovement[]
   stockCounts         StockCount[]
   reorderRules        ReorderRule[]
+  movementsFrom     InventoryMovement[] @relation("FromLocation")
+  movementsTo       InventoryMovement[] @relation("ToLocation")
 }
 
 // 6. Inventory Batches (for lot/batch tracking)
