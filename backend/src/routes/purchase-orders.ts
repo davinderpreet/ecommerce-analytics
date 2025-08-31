@@ -271,6 +271,7 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
         poNumber,
         supplierId,
         status: 'DRAFT',
+        orderDate: new Date(),  // Add orderDate field
         subtotal,
         freightCost: freightCostNum,
         totalCost,
