@@ -1,16 +1,12 @@
-// backend/src/routes/suppliers.ts
-// Complete Supplier Management API
-
+// backend/src/routes/suppliers.ts - FIXED VERSION
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// ==================== SUPPLIER CRUD OPERATIONS ====================
-
-// GET /api/v2/inventory/suppliers - List all suppliers with filtering
-router.get('/suppliers', async (req: Request, res: Response) => {
+// GET /api/v2/inventory/suppliers - List all suppliers
+router.get('/suppliers', async (req: Request, res: Response): Promise<void> => {
   try {
     const { 
       isActive = 'true',
@@ -83,8 +79,8 @@ router.get('/suppliers', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v2/inventory/suppliers/:id - Get single supplier with full details
-router.get('/suppliers/:id', async (req: Request, res: Response) => {
+// GET /api/v2/inventory/suppliers/:id - Get single supplier
+router.get('/suppliers/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -125,10 +121,11 @@ router.get('/suppliers/:id', async (req: Request, res: Response) => {
     });
 
     if (!supplier) {
-      return res.status(404).json({ 
+      res.status(404).json({ 
         success: false, 
         error: 'Supplier not found' 
       });
+      return;
     }
 
     res.json({
@@ -145,7 +142,7 @@ router.get('/suppliers/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/v2/inventory/suppliers - Create new supplier
-router.post('/suppliers', async (req: Request, res: Response) => {
+router.post('/suppliers', async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       companyName,
@@ -167,10 +164,11 @@ router.post('/suppliers', async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!companyName || !email) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Company name and email are required'
       });
+      return;
     }
 
     const supplier = await prisma.supplier.create({
@@ -210,7 +208,7 @@ router.post('/suppliers', async (req: Request, res: Response) => {
 });
 
 // PUT /api/v2/inventory/suppliers/:id - Update supplier
-router.put('/suppliers/:id', async (req: Request, res: Response) => {
+router.put('/suppliers/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -246,10 +244,11 @@ router.put('/suppliers/:id', async (req: Request, res: Response) => {
     console.error('Error updating supplier:', error);
     
     if (error.code === 'P2025') {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Supplier not found'
       });
+      return;
     }
     
     res.status(500).json({ 
@@ -260,7 +259,7 @@ router.put('/suppliers/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/v2/inventory/suppliers/:id - Soft delete supplier
-router.delete('/suppliers/:id', async (req: Request, res: Response) => {
+router.delete('/suppliers/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -275,10 +274,11 @@ router.delete('/suppliers/:id', async (req: Request, res: Response) => {
     });
 
     if (activePOs > 0) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: `Cannot delete supplier with ${activePOs} active purchase orders`
       });
+      return;
     }
 
     // Soft delete - just mark as inactive
@@ -296,10 +296,11 @@ router.delete('/suppliers/:id', async (req: Request, res: Response) => {
     console.error('Error deleting supplier:', error);
     
     if (error.code === 'P2025') {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Supplier not found'
       });
+      return;
     }
     
     res.status(500).json({ 
@@ -309,22 +310,18 @@ router.delete('/suppliers/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ==================== SUPPLIER PRODUCT CATALOG ====================
-
 // GET /api/v2/inventory/suppliers/:id/products - Get supplier's product catalog
-router.get('/suppliers/:id/products', async (req: Request, res: Response) => {
+router.get('/suppliers/:id/products', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
     const supplierProducts = await prisma.supplierProduct.findMany({
       where: { 
         supplierId: id,
-        validUntil: {
-          OR: [
-            { gte: new Date() },
-            { equals: null }
-          ]
-        }
+        OR: [
+          { validUntil: { gte: new Date() } },
+          { validUntil: null }
+        ]
       },
       include: {
         product: {
@@ -356,7 +353,7 @@ router.get('/suppliers/:id/products', async (req: Request, res: Response) => {
 });
 
 // POST /api/v2/inventory/suppliers/:id/products - Add/update product in supplier catalog
-router.post('/suppliers/:id/products', async (req: Request, res: Response) => {
+router.post('/suppliers/:id/products', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id: supplierId } = req.params;
     const {
@@ -373,10 +370,11 @@ router.post('/suppliers/:id/products', async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!productId || !costPerUnit) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Product ID and cost per unit are required'
       });
+      return;
     }
 
     // Check if this supplier-product combination already exists
@@ -434,7 +432,7 @@ router.post('/suppliers/:id/products', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/v2/inventory/suppliers/:id/products/:productId - Remove product from supplier catalog
-router.delete('/suppliers/:id/products/:productId', async (req: Request, res: Response) => {
+router.delete('/suppliers/:id/products/:productId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id: supplierId, productId } = req.params;
 
@@ -443,10 +441,11 @@ router.delete('/suppliers/:id/products/:productId', async (req: Request, res: Re
     });
 
     if (!supplierProduct) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Product not found in supplier catalog'
       });
+      return;
     }
 
     await prisma.supplierProduct.delete({
@@ -462,84 +461,6 @@ router.delete('/suppliers/:id/products/:productId', async (req: Request, res: Re
     res.status(500).json({ 
       success: false, 
       error: error.message || 'Failed to remove supplier product' 
-    });
-  }
-});
-
-// ==================== SUPPLIER ANALYTICS ====================
-
-// GET /api/v2/inventory/suppliers/:id/performance - Get supplier performance metrics
-router.get('/suppliers/:id/performance', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { days = '30' } = req.query;
-    
-    const daysAgo = new Date();
-    daysAgo.setDate(daysAgo.getDate() - parseInt(days as string));
-
-    // Get PO statistics
-    const poStats = await prisma.purchaseOrder.groupBy({
-      by: ['status'],
-      where: {
-        supplierId: id,
-        createdAt: { gte: daysAgo }
-      },
-      _count: true
-    });
-
-    // Get total spending
-    const totalSpending = await prisma.purchaseOrder.aggregate({
-      where: {
-        supplierId: id,
-        status: 'RECEIVED'
-      },
-      _sum: {
-        totalCost: true
-      },
-      _avg: {
-        totalCost: true
-      },
-      _count: true
-    });
-
-    // Calculate on-time delivery rate
-    const deliveredPOs = await prisma.purchaseOrder.findMany({
-      where: {
-        supplierId: id,
-        status: 'RECEIVED',
-        expectedDate: { not: null },
-        receivedDate: { not: null }
-      },
-      select: {
-        expectedDate: true,
-        receivedDate: true
-      }
-    });
-
-    const onTimeDeliveries = deliveredPOs.filter(po => 
-      po.receivedDate && po.expectedDate && 
-      po.receivedDate <= po.expectedDate
-    ).length;
-
-    const onTimeRate = deliveredPOs.length > 0 
-      ? (onTimeDeliveries / deliveredPOs.length) * 100 
-      : 0;
-
-    res.json({
-      success: true,
-      data: {
-        orderStats: poStats,
-        totalSpending: totalSpending._sum.totalCost || 0,
-        averageOrderValue: totalSpending._avg.totalCost || 0,
-        totalOrders: totalSpending._count,
-        onTimeDeliveryRate: Math.round(onTimeRate)
-      }
-    });
-  } catch (error: any) {
-    console.error('Error fetching supplier performance:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Failed to fetch supplier performance' 
     });
   }
 });
