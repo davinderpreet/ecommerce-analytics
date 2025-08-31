@@ -1,9 +1,16 @@
 // backend/src/routes/purchase-orders.ts
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Decimal } from '@prisma/client';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Helper function to convert Decimal to number
+const toNumber = (value: Decimal | number | null | undefined): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  return parseFloat(value.toString());
+};
 
 // Generate PO number
 const generatePONumber = async (): Promise<string> => {
@@ -103,9 +110,30 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
       _count: true
     });
 
+    // Convert Decimal values to numbers for JSON serialization
+    const serializedPOs = purchaseOrders.map(po => ({
+      ...po,
+      subtotal: toNumber(po.subtotal),
+      freightCost: toNumber(po.freightCost),
+      insuranceCost: toNumber(po.insuranceCost),
+      customsDuty: toNumber(po.customsDuty),
+      otherFees: toNumber(po.otherFees),
+      totalCost: toNumber(po.totalCost),
+      exchangeRate: toNumber(po.exchangeRate),
+      items: po.items.map(item => ({
+        ...item,
+        unitCost: toNumber(item.unitCost),
+        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+        freightAllocation: toNumber(item.freightAllocation),
+        dutyAllocation: toNumber(item.dutyAllocation),
+        otherCostAllocation: toNumber(item.otherCostAllocation),
+        landedUnitCost: toNumber(item.landedUnitCost)
+      }))
+    }));
+
     res.json({
       success: true,
-      data: purchaseOrders,
+      data: serializedPOs,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -114,7 +142,7 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
       },
       stats: {
         totalPending: stats._count || 0,
-        totalValue: stats._sum.totalCost || 0
+        totalValue: toNumber(stats._sum.totalCost) || 0
       }
     });
   } catch (error: any) {
@@ -152,12 +180,34 @@ router.get('/purchase-orders/:id', async (req: Request, res: Response) => {
         success: false, 
         error: 'Purchase order not found' 
       });
-    } else {
-      res.json({
-        success: true,
-        data: purchaseOrder
-      });
+      return;
     }
+
+    // Convert Decimal values to numbers for JSON serialization
+    const serializedPO = {
+      ...purchaseOrder,
+      subtotal: toNumber(purchaseOrder.subtotal),
+      freightCost: toNumber(purchaseOrder.freightCost),
+      insuranceCost: toNumber(purchaseOrder.insuranceCost),
+      customsDuty: toNumber(purchaseOrder.customsDuty),
+      otherFees: toNumber(purchaseOrder.otherFees),
+      totalCost: toNumber(purchaseOrder.totalCost),
+      exchangeRate: toNumber(purchaseOrder.exchangeRate),
+      items: purchaseOrder.items.map(item => ({
+        ...item,
+        unitCost: toNumber(item.unitCost),
+        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+        freightAllocation: toNumber(item.freightAllocation),
+        dutyAllocation: toNumber(item.dutyAllocation),
+        otherCostAllocation: toNumber(item.otherCostAllocation),
+        landedUnitCost: toNumber(item.landedUnitCost)
+      }))
+    };
+
+    res.json({
+      success: true,
+      data: serializedPO
+    });
   } catch (error: any) {
     res.status(500).json({ 
       success: false, 
@@ -197,7 +247,8 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       };
     });
 
-    const totalCost = subtotal + (parseFloat(freightCost) || 0);
+    const freightCostNum = parseFloat(freightCost) || 0;
+    const totalCost = subtotal + freightCostNum;
     
     // Allocate freight cost proportionally
     const itemsWithAllocation = processedItems.map((item: any) => ({
@@ -206,9 +257,8 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       quantityOrdered: item.quantity,
       quantityReceived: 0,
       unitCost: item.unitCost,
-      totalCost: item.totalCost,
-      freightAllocation: subtotal > 0 ? (item.totalCost / subtotal) * freightCost : 0,
-      landedUnitCost: item.unitCost + (subtotal > 0 ? ((item.totalCost / subtotal) * freightCost) / item.quantity : 0)
+      freightAllocation: subtotal > 0 ? (item.totalCost / subtotal) * freightCostNum : 0,
+      landedUnitCost: item.unitCost + (subtotal > 0 ? ((item.totalCost / subtotal) * freightCostNum) / item.quantity : 0)
     }));
 
     // Generate PO number
@@ -221,7 +271,7 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
         supplierId,
         status: 'DRAFT',
         subtotal,
-        freightCost: parseFloat(freightCost) || 0,
+        freightCost: freightCostNum,
         totalCost,
         currency: 'USD',
         expectedDate: expectedDate ? new Date(expectedDate) : null,
@@ -241,10 +291,25 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       }
     });
 
+    // Convert Decimal values to numbers for JSON serialization
+    const serializedPO = {
+      ...purchaseOrder,
+      subtotal: toNumber(purchaseOrder.subtotal),
+      freightCost: toNumber(purchaseOrder.freightCost),
+      totalCost: toNumber(purchaseOrder.totalCost),
+      items: purchaseOrder.items.map(item => ({
+        ...item,
+        unitCost: toNumber(item.unitCost),
+        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+        freightAllocation: toNumber(item.freightAllocation),
+        landedUnitCost: toNumber(item.landedUnitCost)
+      }))
+    };
+
     res.status(201).json({
       success: true,
       message: 'Purchase order created successfully',
-      data: purchaseOrder
+      data: serializedPO
     });
   } catch (error: any) {
     console.error('Error creating purchase order:', error);
@@ -297,10 +362,31 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
       }
     });
 
+    // Convert Decimal values to numbers for JSON serialization
+    const serializedPO = {
+      ...purchaseOrder,
+      subtotal: toNumber(purchaseOrder.subtotal),
+      freightCost: toNumber(purchaseOrder.freightCost),
+      insuranceCost: toNumber(purchaseOrder.insuranceCost),
+      customsDuty: toNumber(purchaseOrder.customsDuty),
+      otherFees: toNumber(purchaseOrder.otherFees),
+      totalCost: toNumber(purchaseOrder.totalCost),
+      exchangeRate: toNumber(purchaseOrder.exchangeRate),
+      items: purchaseOrder.items.map(item => ({
+        ...item,
+        unitCost: toNumber(item.unitCost),
+        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+        freightAllocation: toNumber(item.freightAllocation),
+        dutyAllocation: toNumber(item.dutyAllocation),
+        otherCostAllocation: toNumber(item.otherCostAllocation),
+        landedUnitCost: toNumber(item.landedUnitCost)
+      }))
+    };
+
     res.json({
       success: true,
       message: 'Purchase order updated successfully',
-      data: purchaseOrder
+      data: serializedPO
     });
   } catch (error: any) {
     res.status(500).json({ 
@@ -382,6 +468,7 @@ router.post('/purchase-orders/:id/receive', async (req: Request, res: Response) 
           }
 
           // Create inventory movement record
+          const landedCostNum = toNumber(poItem.landedUnitCost);
           await tx.inventoryMovement.create({
             data: {
               productId: poItem.productId,
@@ -390,7 +477,7 @@ router.post('/purchase-orders/:id/receive', async (req: Request, res: Response) 
               reason: `PO Receipt: ${purchaseOrder.poNumber}`,
               referenceType: 'po',
               referenceId: id,
-              costImpact: poItem.landedUnitCost ? poItem.landedUnitCost * item.quantityReceived : null
+              costImpact: landedCostNum ? landedCostNum * item.quantityReceived : null
             }
           });
         }
@@ -431,10 +518,31 @@ router.post('/purchase-orders/:id/receive', async (req: Request, res: Response) 
       return updatedPO;
     });
 
+    // Convert Decimal values to numbers for JSON serialization
+    const serializedPO = {
+      ...result,
+      subtotal: toNumber(result.subtotal),
+      freightCost: toNumber(result.freightCost),
+      insuranceCost: toNumber(result.insuranceCost),
+      customsDuty: toNumber(result.customsDuty),
+      otherFees: toNumber(result.otherFees),
+      totalCost: toNumber(result.totalCost),
+      exchangeRate: toNumber(result.exchangeRate),
+      items: result.items.map(item => ({
+        ...item,
+        unitCost: toNumber(item.unitCost),
+        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+        freightAllocation: toNumber(item.freightAllocation),
+        dutyAllocation: toNumber(item.dutyAllocation),
+        otherCostAllocation: toNumber(item.otherCostAllocation),
+        landedUnitCost: toNumber(item.landedUnitCost)
+      }))
+    };
+
     res.json({
       success: true,
       message: 'Purchase order received successfully',
-      data: result
+      data: serializedPO
     });
   } catch (error: any) {
     console.error('Error receiving purchase order:', error);
@@ -511,9 +619,16 @@ router.get('/purchase-orders/products/:productId/suppliers', async (req: Request
       ]
     });
 
+    // Convert Decimal values to numbers
+    const serializedSupplierProducts = supplierProducts.map(sp => ({
+      ...sp,
+      costPerUnit: toNumber(sp.costPerUnit),
+      moq: sp.moq || 0
+    }));
+
     res.json({
       success: true,
-      data: supplierProducts
+      data: serializedSupplierProducts
     });
   } catch (error: any) {
     res.status(500).json({ 
