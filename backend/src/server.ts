@@ -9,6 +9,7 @@ import { scheduler } from './services/scheduler';
 import { cacheService } from './services/cache';
 import returnsRoutes from './routes/returns';
 import supplierRoutes from './routes/suppliers';
+import purchaseOrderRoutes from './routes/purchase-orders';
 import productAnalyticsRoutes from './routes/product-analytics';
 import { syncShopifyOrders } from './integrations/shopify';
 
@@ -27,6 +28,7 @@ app.use('/api/v1/scheduler', schedulerRoutes);
 app.use('/api/v1/inventory', inventoryRoutes);
 app.use('/api/v2/inventory', supplierRoutes);
 app.use('/api/v1/returns', returnsRoutes);
+app.use('/api/v2/inventory', purchaseOrderRoutes);
 app.use('/api/v1/analytics', productAnalyticsRoutes);
 
 // Timezone configuration
