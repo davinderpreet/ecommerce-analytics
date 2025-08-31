@@ -265,13 +265,28 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
     // Generate PO number
     const poNumber = await generatePONumber();
 
+    // Debug: Log what we're trying to create
+    console.log('Creating PO with data:', {
+      poNumber,
+      supplierId,
+      status: 'DRAFT',
+      orderDate: new Date(),
+      subtotal,
+      freightCost: freightCostNum,
+      totalCost,
+      currency: 'USD',
+      expectedDate: expectedDate ? new Date(expectedDate) : null,
+      notes,
+      shippingMethod
+    });
+
     // Create PO with items
     const purchaseOrder = await prisma.purchaseOrder.create({
       data: {
         poNumber,
         supplierId,
         status: 'DRAFT',
-        orderDate: new Date(),  // Add orderDate field
+        orderDate: new Date(),  // Explicitly set orderDate
         subtotal,
         freightCost: freightCostNum,
         totalCost,
