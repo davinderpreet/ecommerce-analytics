@@ -367,6 +367,7 @@ model PurchaseOrder {
   supplier         Supplier       @relation(fields: [supplierId], references: [id])
   items            POItem[]
   movements        InventoryMovement[]
+ @@map("purchase_orders")  // Add this line
 }
 
 // 4. PO Line Items
@@ -392,6 +393,8 @@ model POItem {
   purchaseOrder        PurchaseOrder @relation(fields: [poId], references: [id])
   product              Product       @relation(fields: [productId], references: [id])
   batches              InventoryBatch[]
+
+ @@map("purchase_order_items")  // Add this line
 }
 
 // 5. Inventory Locations
