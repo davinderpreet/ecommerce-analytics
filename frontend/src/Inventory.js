@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import SupplierManagement from './components/SupplierManagement';
+import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import { 
   Package, AlertTriangle, TrendingDown, ShoppingCart,
   RefreshCw, Download, Upload, Search, Filter, 
@@ -815,14 +816,9 @@ const Inventory = () => {
 
 
         {/* Purchase Orders Tab Content */}
-        {activeTab === 'purchase-orders' && (
-          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-12 border border-white/20 text-center">
-            <FileText className="w-16 h-16 text-white/40 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-2">Purchase Orders</h2>
-            <p className="text-white/60">Coming soon - Create and track purchase orders</p>
-          </div>
-        )}
-
+      {activeTab === 'purchase-orders' && (
+  <PurchaseOrderManagement API_BASE={API_BASE} />
+)}
         {/* Analytics Tab Content */}
         {activeTab === 'analytics' && (
           <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-12 border border-white/20 text-center">
