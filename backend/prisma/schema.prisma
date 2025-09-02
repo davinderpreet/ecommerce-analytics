@@ -484,6 +484,7 @@ model InventoryMovement {
   fromLocation  Location?     @relation("FromLocation", fields: [locationFrom], references: [id])
   toLocation    Location?     @relation("ToLocation", fields: [locationTo], references: [id])
   purchaseOrder PurchaseOrder? @relation(fields: [referenceId], references: [id])
+  inventory     Inventory?    @relation(fields: [inventoryId], references: [id])
   
   @@index([createdAt])
   @@index([movementType])
