@@ -52,11 +52,21 @@ const CreatePOModal = ({ show, onClose, onSuccess, API_BASE }) => {
     freightCost: 0,
     notes: ''
   });
+  
   const [items, setItems] = useState([
     { productId: '', quantity: 0, unitCost: 0, supplierSku: '' }
   ]);
-  // NEW: State for additional costs
-const [additionalCosts, setAdditionalCosts] = useState([]);
+
+  // Define cost types at the top of CreatePOModal component
+  const COST_TYPES = [
+    { value: 'handling', label: 'Handling Fee', field: 'handlingFee' },
+    { value: 'air', label: 'Air Shipping Fee', field: 'airShippingFee' },
+    { value: 'amazon', label: 'Amazon Shipping Fee', field: 'amazonShippingFee' },
+    { value: 'misc', label: 'Miscellaneous', field: 'miscellaneousFee' }
+  ];
+
+  // State for additional costs
+  const [additionalCosts, setAdditionalCosts] = useState([]);
   
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -106,87 +116,134 @@ const [additionalCosts, setAdditionalCosts] = useState([]);
     newItems[index][field] = value;
     setItems(newItems);
   };
-  // Functions to manage additional costs
-const addCost = () => {
-  const newCost = {
-    id: Date.now().toString(), // Simple unique ID
-    name: '',
-    amount: 0,
-    allocationMethod: 'BY_VALUE',
-    description: ''
-  };
-  setAdditionalCosts([...additionalCosts, newCost]);
-};
 
-const removeCost = (index) => {
-  setAdditionalCosts(additionalCosts.filter((_, i) => i !== index));
-};
-
-const updateCost = (index, field, value) => {
-  const newCosts = [...additionalCosts];
-  newCosts[index][field] = value;
-  setAdditionalCosts(newCosts);
-};
-  
-
-const calculateTotals = () => {
-  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
-  const freightCostNum = parseFloat(formData.freightCost || 0);
-  
-  // NEW: Calculate total additional costs
-  const totalAdditionalCosts = additionalCosts.reduce((sum, cost) => 
-    sum + parseFloat(cost.amount || 0), 0
-  );
-  
-  const total = subtotal + freightCostNum + totalAdditionalCosts;
-  
-  return { subtotal, freightCostNum, totalAdditionalCosts, total };
-};
-
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-
-  try {
-    // Prepare additional costs data
-    const costsData = additionalCosts.filter(c => c.name && c.amount > 0);
+  // Updated functions to manage additional costs with dropdown
+  const addCost = () => {
+    // Check which cost types are already added
+    const usedTypes = additionalCosts.map(c => c.costType);
+    const availableTypes = COST_TYPES.filter(t => !usedTypes.includes(t.value));
     
-    const response = await fetch(`${API_BASE}/api/v2/inventory/purchase-orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...formData,
-        items: items.filter(item => item.productId && item.quantity > 0),
-        // NEW: Include additional costs
-        additionalCosts: costsData
-      })
-    });
-
-    const data = await response.json();
-    if (data.success) {
-      onSuccess(data.data);
-      onClose();
-      resetForm();
+    // If all 4 cost types are already added, don't allow more
+    if (availableTypes.length === 0) {
+      alert('All cost types have been added. Maximum 4 additional costs allowed.');
+      return;
     }
-  } catch (error) {
-    console.error('Error creating PO:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+    
+    // Create new cost with first available type
+    const firstAvailable = availableTypes[0];
+    const newCost = {
+      id: Date.now().toString(),
+      costType: firstAvailable.value,
+      displayName: firstAvailable.label,
+      fieldName: firstAvailable.field,
+      amount: 0,
+      allocationMethod: 'BY_VALUE'
+    };
+    
+    setAdditionalCosts([...additionalCosts, newCost]);
+  };
+
+  const removeCost = (index) => {
+    setAdditionalCosts(additionalCosts.filter((_, i) => i !== index));
+  };
+
+  const updateCost = (index, field, value) => {
+    const newCosts = [...additionalCosts];
+    
+    if (field === 'costType') {
+      // Check if this type is already used by another cost
+      const isUsed = additionalCosts.some((cost, i) => 
+        i !== index && cost.costType === value
+      );
+      
+      if (isUsed) {
+        alert('This cost type is already added');
+        return;
+      }
+      
+      // When changing cost type, update display name and field name too
+      const selectedType = COST_TYPES.find(t => t.value === value);
+      if (selectedType) {
+        newCosts[index].costType = value;
+        newCosts[index].displayName = selectedType.label;
+        newCosts[index].fieldName = selectedType.field;
+      }
+    } else {
+      newCosts[index][field] = value;
+    }
+    
+    setAdditionalCosts(newCosts);
+  };
+
+  const calculateTotals = () => {
+    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
+    const freightCostNum = parseFloat(formData.freightCost || 0);
+    
+    // Calculate total additional costs
+    const totalAdditionalCosts = additionalCosts.reduce((sum, cost) => 
+      sum + parseFloat(cost.amount || 0), 0
+    );
+    
+    const total = subtotal + freightCostNum + totalAdditionalCosts;
+    
+    return { subtotal, freightCostNum, totalAdditionalCosts, total };
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      // Prepare additional costs data - transform to backend format
+      const costsData = {};
+      const allocationMethods = {};
+      
+      additionalCosts.forEach(cost => {
+        if (cost.amount > 0) {
+          costsData[cost.fieldName] = parseFloat(cost.amount);
+          allocationMethods[cost.costType] = cost.allocationMethod;
+        }
+      });
+      
+      const response = await fetch(`${API_BASE}/api/v2/inventory/purchase-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          items: items.filter(item => item.productId && item.quantity > 0),
+          // Send individual cost fields
+          ...costsData,
+          // Send allocation methods
+          costAllocationMethods: allocationMethods
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        onSuccess(data.data);
+        onClose();
+        resetForm();
+      }
+    } catch (error) {
+      console.error('Error creating PO:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const resetForm = () => {
-  setFormData({
-    supplierId: '',
-    expectedDate: '',
-    shippingMethod: '',
-    freightCost: 0,
-    notes: ''
-  });
-  setItems([{ productId: '', quantity: 0, unitCost: 0, supplierSku: '' }]);
-  setAdditionalCosts([]); // NEW: Reset additional costs
-};
-  const { subtotal, total } = calculateTotals();
+    setFormData({
+      supplierId: '',
+      expectedDate: '',
+      shippingMethod: '',
+      freightCost: 0,
+      notes: ''
+    });
+    setItems([{ productId: '', quantity: 0, unitCost: 0, supplierSku: '' }]);
+    setAdditionalCosts([]); // Reset additional costs
+  };
+
+  const { subtotal, freightCostNum, totalAdditionalCosts, total } = calculateTotals();
 
   if (!show) return null;
 
@@ -260,69 +317,7 @@ const handleSubmit = async (e) => {
                 + Add Item
               </button>
             </div>
-{/* Additional Costs Section - NEW */}
-<div>
-  <div className="flex justify-between items-center mb-3">
-    <label className="text-white/70 text-sm">Additional Costs</label>
-    <button
-      type="button"
-      onClick={addCost}
-      className="px-3 py-1.5 bg-green-500/20 text-green-300 rounded-lg hover:bg-green-500/30 flex items-center space-x-1 text-sm"
-    >
-      <Plus className="w-4 h-4" />
-      <span>Add Cost</span>
-    </button>
-  </div>
-  
-  {additionalCosts.length > 0 && (
-    <div className="space-y-3 bg-white/5 rounded-xl p-4">
-      {additionalCosts.map((cost, index) => (
-        <div key={cost.id} className="grid grid-cols-12 gap-3 items-center">
-          <div className="col-span-4">
-            <input
-              type="text"
-              placeholder="Cost name (e.g., Customs Duty)"
-              value={cost.name}
-              onChange={(e) => updateCost(index, 'name', e.target.value)}
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 text-sm"
-            />
-          </div>
-          <div className="col-span-3">
-            <input
-              type="number"
-              step="0.01"
-              placeholder="Amount"
-              value={cost.amount}
-              onChange={(e) => updateCost(index, 'amount', e.target.value)}
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 text-sm"
-            />
-          </div>
-          <div className="col-span-4">
-            <select
-              value={cost.allocationMethod}
-              onChange={(e) => updateCost(index, 'allocationMethod', e.target.value)}
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
-            >
-              <option value="BY_VALUE">Allocate by Value</option>
-              <option value="BY_QUANTITY">Allocate by Quantity</option>
-              <option value="EQUAL">Split Equally</option>
-            </select>
-          </div>
-          <div className="col-span-1">
-            <button
-              type="button"
-              onClick={() => removeCost(index)}
-              className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30"
-              title="Remove cost"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
+
             <div className="space-y-3">
               {items.map((item, index) => (
                 <div key={index} className="grid grid-cols-5 gap-3 items-center">
@@ -375,6 +370,89 @@ const handleSubmit = async (e) => {
             </div>
           </div>
 
+          {/* Additional Costs Section - UPDATED WITH DROPDOWN */}
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <label className="text-white/70 text-sm">Additional Costs</label>
+              <button
+                type="button"
+                onClick={addCost}
+                disabled={additionalCosts.length >= 4}
+                className={`px-3 py-1.5 rounded-lg flex items-center space-x-1 text-sm ${
+                  additionalCosts.length >= 4 
+                    ? 'bg-gray-500/20 text-gray-400 cursor-not-allowed' 
+                    : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Cost</span>
+              </button>
+            </div>
+            
+            {additionalCosts.length > 0 && (
+              <div className="space-y-3 bg-white/5 rounded-xl p-4">
+                {additionalCosts.map((cost, index) => {
+                  // Get available types for this cost's dropdown
+                  const usedTypes = additionalCosts
+                    .filter((_, i) => i !== index)
+                    .map(c => c.costType);
+                  const availableTypes = COST_TYPES.filter(t => 
+                    !usedTypes.includes(t.value) || t.value === cost.costType
+                  );
+                  
+                  return (
+                    <div key={cost.id} className="grid grid-cols-12 gap-3 items-center">
+                      <div className="col-span-4">
+                        <select
+                          value={cost.costType}
+                          onChange={(e) => updateCost(index, 'costType', e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                        >
+                          {availableTypes.map(type => (
+                            <option key={type.value} value={type.value}>
+                              {type.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-span-3">
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Amount"
+                          value={cost.amount}
+                          onChange={(e) => updateCost(index, 'amount', e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-4">
+                        <select
+                          value={cost.allocationMethod}
+                          onChange={(e) => updateCost(index, 'allocationMethod', e.target.value)}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+                        >
+                          <option value="BY_VALUE">Allocate by Value</option>
+                          <option value="BY_QUANTITY">Allocate by Quantity</option>
+                          <option value="EQUAL">Split Equally</option>
+                        </select>
+                      </div>
+                      <div className="col-span-1">
+                        <button
+                          type="button"
+                          onClick={() => removeCost(index)}
+                          className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30"
+                          title="Remove cost"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Notes */}
           <div>
             <label className="text-white/70 text-sm block mb-2">Notes</label>
@@ -387,40 +465,39 @@ const handleSubmit = async (e) => {
             />
           </div>
 
-          {/* Totals */}
-         {/* Enhanced Totals */}
-<div className="bg-white/5 rounded-xl p-4 space-y-2">
-  <div className="flex justify-between text-white/70">
-    <span>Subtotal</span>
-    <span>${calculateTotals().subtotal.toFixed(2)}</span>
-  </div>
-  <div className="flex justify-between text-white/70">
-    <span>Freight</span>
-    <span>${calculateTotals().freightCostNum.toFixed(2)}</span>
-  </div>
-  
-  {/* Show each additional cost */}
-  {additionalCosts.filter(c => c.name && c.amount > 0).map((cost, index) => (
-    <div key={cost.id} className="flex justify-between text-white/70">
-      <span>{cost.name}</span>
-      <span>${parseFloat(cost.amount || 0).toFixed(2)}</span>
-    </div>
-  ))}
-  
-  {calculateTotals().totalAdditionalCosts > 0 && (
-    <div className="border-t border-white/10 pt-2 mt-2">
-      <div className="flex justify-between text-white/70 text-sm">
-        <span>Total Additional Costs</span>
-        <span>${calculateTotals().totalAdditionalCosts.toFixed(2)}</span>
-      </div>
-    </div>
-  )}
-  
-  <div className="flex justify-between text-white font-bold text-lg border-t border-white/20 pt-2">
-    <span>Total</span>
-    <span>${calculateTotals().total.toFixed(2)}</span>
-  </div>
-</div>
+          {/* Enhanced Totals */}
+          <div className="bg-white/5 rounded-xl p-4 space-y-2">
+            <div className="flex justify-between text-white/70">
+              <span>Subtotal</span>
+              <span>${subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-white/70">
+              <span>Freight</span>
+              <span>${freightCostNum.toFixed(2)}</span>
+            </div>
+            
+            {/* Show each additional cost */}
+            {additionalCosts.filter(c => c.amount > 0).map((cost) => (
+              <div key={cost.id} className="flex justify-between text-white/70">
+                <span>{cost.displayName}</span>
+                <span>${parseFloat(cost.amount || 0).toFixed(2)}</span>
+              </div>
+            ))}
+            
+            {totalAdditionalCosts > 0 && (
+              <div className="border-t border-white/10 pt-2 mt-2">
+                <div className="flex justify-between text-white/70 text-sm">
+                  <span>Total Additional Costs</span>
+                  <span>${totalAdditionalCosts.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex justify-between text-white font-bold text-lg border-t border-white/20 pt-2">
+              <span>Total</span>
+              <span>${total.toFixed(2)}</span>
+            </div>
+          </div>
 
           {/* Actions */}
           <div className="flex space-x-3">
@@ -633,7 +710,7 @@ const ViewPOModal = ({ show, onClose, poId, onUpdate, API_BASE }) => {
           </div>
         </div>
 
-        {/* Cost Summary */}
+        {/* Cost Summary - UPDATED to show all costs */}
         <div className="bg-white/5 rounded-xl p-4 mb-6">
           <div className="space-y-2">
             <div className="flex justify-between text-white/70">
@@ -644,7 +721,34 @@ const ViewPOModal = ({ show, onClose, poId, onUpdate, API_BASE }) => {
               <span>Freight Cost</span>
               <span>${po.freightCost.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-white font-bold text-lg">
+            
+            {/* Show additional costs if they exist */}
+            {po.handlingFee > 0 && (
+              <div className="flex justify-between text-white/70">
+                <span>Handling Fee</span>
+                <span>${po.handlingFee.toFixed(2)}</span>
+              </div>
+            )}
+            {po.airShippingFee > 0 && (
+              <div className="flex justify-between text-white/70">
+                <span>Air Shipping Fee</span>
+                <span>${po.airShippingFee.toFixed(2)}</span>
+              </div>
+            )}
+            {po.amazonShippingFee > 0 && (
+              <div className="flex justify-between text-white/70">
+                <span>Amazon Shipping Fee</span>
+                <span>${po.amazonShippingFee.toFixed(2)}</span>
+              </div>
+            )}
+            {po.miscellaneousFee > 0 && (
+              <div className="flex justify-between text-white/70">
+                <span>Miscellaneous</span>
+                <span>${po.miscellaneousFee.toFixed(2)}</span>
+              </div>
+            )}
+            
+            <div className="flex justify-between text-white font-bold text-lg border-t border-white/20 pt-2">
               <span>Total Cost</span>
               <span>${po.totalCost.toFixed(2)}</span>
             </div>
@@ -695,7 +799,7 @@ const ViewPOModal = ({ show, onClose, poId, onUpdate, API_BASE }) => {
   );
 };
 
-// Main Purchase Order Component
+// Main Purchase Order Component (unchanged)
 const PurchaseOrderManagement = ({ API_BASE }) => {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
