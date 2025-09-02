@@ -143,44 +143,49 @@ const calculateTotals = () => {
   return { subtotal, freightCostNum, totalAdditionalCosts, total };
 };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const response = await fetch(`${API_BASE}/api/v2/inventory/purchase-orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          items: items.filter(item => item.productId && item.quantity > 0)
-        })
-      });
+  try {
+    // Prepare additional costs data
+    const costsData = additionalCosts.filter(c => c.name && c.amount > 0);
+    
+    const response = await fetch(`${API_BASE}/api/v2/inventory/purchase-orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...formData,
+        items: items.filter(item => item.productId && item.quantity > 0),
+        // NEW: Include additional costs
+        additionalCosts: costsData
+      })
+    });
 
-      const data = await response.json();
-      if (data.success) {
-        onSuccess(data.data);
-        onClose();
-        resetForm();
-      }
-    } catch (error) {
-      console.error('Error creating PO:', error);
-    } finally {
-      setLoading(false);
+    const data = await response.json();
+    if (data.success) {
+      onSuccess(data.data);
+      onClose();
+      resetForm();
     }
-  };
+  } catch (error) {
+    console.error('Error creating PO:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const resetForm = () => {
-    setFormData({
-      supplierId: '',
-      expectedDate: '',
-      shippingMethod: '',
-      freightCost: 0,
-      notes: ''
-    });
-    setItems([{ productId: '', quantity: 0, unitCost: 0, supplierSku: '' }]);
-  };
-
+  setFormData({
+    supplierId: '',
+    expectedDate: '',
+    shippingMethod: '',
+    freightCost: 0,
+    notes: ''
+  });
+  setItems([{ productId: '', quantity: 0, unitCost: 0, supplierSku: '' }]);
+  setAdditionalCosts([]); // NEW: Reset additional costs
+};
   const { subtotal, total } = calculateTotals();
 
   if (!show) return null;
