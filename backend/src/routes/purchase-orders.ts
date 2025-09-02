@@ -119,6 +119,10 @@ router.get('/purchase-orders', async (req: Request, res: Response) => {
       insuranceCost: toNumber(po.insuranceCost),
       customsDuty: toNumber(po.customsDuty),
       otherFees: toNumber(po.otherFees),
+      handlingFee: toNumber((po as any).handlingFee),
+      airShippingFee: toNumber((po as any).airShippingFee),
+      amazonShippingFee: toNumber((po as any).amazonShippingFee),
+      miscellaneousFee: toNumber((po as any).miscellaneousFee),
       totalCost: toNumber(po.totalCost),
       exchangeRate: toNumber(po.exchangeRate),
       items: po.items.map(item => ({
@@ -192,6 +196,11 @@ router.get('/purchase-orders/:id', async (req: Request, res: Response) => {
       insuranceCost: toNumber(purchaseOrder.insuranceCost),
       customsDuty: toNumber(purchaseOrder.customsDuty),
       otherFees: toNumber(purchaseOrder.otherFees),
+      handlingFee: toNumber((purchaseOrder as any).handlingFee),
+      airShippingFee: toNumber((purchaseOrder as any).airShippingFee),
+      amazonShippingFee: toNumber((purchaseOrder as any).amazonShippingFee),
+      miscellaneousFee: toNumber((purchaseOrder as any).miscellaneousFee),
+      costAllocationMethods: (purchaseOrder as any).costAllocationMethods,
       totalCost: toNumber(purchaseOrder.totalCost),
       exchangeRate: toNumber(purchaseOrder.exchangeRate),
       items: purchaseOrder.items.map(item => ({
@@ -227,7 +236,12 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       freightCost = 0,
       notes,
       shippingMethod,
-      additionalCosts = []
+      // NEW: Accept individual cost fields
+      handlingFee = 0,
+      airShippingFee = 0,
+      amazonShippingFee = 0,
+      miscellaneousFee = 0,
+      costAllocationMethods = {}
     } = req.body;
 
     if (!supplierId || !items || items.length === 0) {
@@ -249,119 +263,135 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       };
     });
 
-   const freightCostNum = parseFloat(freightCost) || 0;
-
-// ADD THIS NEW SECTION - Process additional costs
-let insuranceCostNum = 0;
-let customsDutyNum = 0;
-let otherFeesNum = 0;
-let additionalCostsJson = null;
-
-if (additionalCosts && additionalCosts.length > 0) {
-  // Store the full additional costs as JSON string
-  additionalCostsJson = JSON.stringify(additionalCosts);
-  
-  // Also extract specific costs by name
-  additionalCosts.forEach((cost: any) => {
-    const amount = parseFloat(cost.amount) || 0;
-    const name = cost.name?.toLowerCase() || '';
+    // Process all cost fields
+    const freightCostNum = parseFloat(freightCost) || 0;
+    const handlingFeeNum = parseFloat(handlingFee) || 0;
+    const airShippingFeeNum = parseFloat(airShippingFee) || 0;
+    const amazonShippingFeeNum = parseFloat(amazonShippingFee) || 0;
+    const miscellaneousFeeNum = parseFloat(miscellaneousFee) || 0;
     
-    if (name.includes('insurance')) {
-      insuranceCostNum += amount;
-    } else if (name.includes('customs') || name.includes('duty')) {
-      customsDutyNum += amount;
-    } else {
-      otherFeesNum += amount;
-    }
-  });
-}
-// END OF NEW SECTION
-
-// Update this line to include all costs
-const totalCost = subtotal + freightCostNum + insuranceCostNum + customsDutyNum + otherFeesNum;
+    // Calculate total including all costs
+    const totalCost = subtotal + freightCostNum + handlingFeeNum + 
+                     airShippingFeeNum + amazonShippingFeeNum + miscellaneousFeeNum;
     
-    // Allocate freight cost proportionally
-   // Replace your current itemsWithAllocation with this enhanced version
-const itemsWithAllocation = processedItems.map((item: any) => {
-  const itemValueRatio = subtotal > 0 ? item.totalCost / subtotal : 0;
-  
-  // Calculate allocations for each cost type
-  const freightAllocation = freightCostNum * itemValueRatio;
-  const dutyAllocation = customsDutyNum * itemValueRatio;
-  const otherAllocation = (insuranceCostNum + otherFeesNum) * itemValueRatio;
-  
-  const totalAllocation = freightAllocation + dutyAllocation + otherAllocation;
-  
-  return {
-    productId: item.productId,
-    supplierSku: item.supplierSku || null,
-    quantityOrdered: item.quantity,
-    quantityReceived: 0,
-    unitCost: item.unitCost,
-    freightAllocation: freightAllocation,
-    dutyAllocation: dutyAllocation, // ADD THIS
-    otherCostAllocation: otherAllocation, // ADD THIS
-    landedUnitCost: item.unitCost + (item.quantity > 0 ? totalAllocation / item.quantity : 0)
-  };
-});
+    // Calculate allocations for items
+    const itemsWithAllocation = processedItems.map((item: any) => {
+      const itemValueRatio = subtotal > 0 ? item.totalCost / subtotal : 0;
+      const totalQuantity = processedItems.reduce((sum: number, i: any) => sum + parseFloat(i.quantity || 0), 0);
+      const itemQuantityRatio = totalQuantity > 0 ? parseFloat(item.quantity || 0) / totalQuantity : 0;
+      const validItemCount = processedItems.filter((i: any) => i.productId && i.quantity > 0).length;
+      const equalRatio = validItemCount > 0 ? 1 / validItemCount : 0;
+      
+      // Calculate allocations based on methods
+      let totalAllocation = 0;
+      
+      // Freight allocation (always by value for now)
+      const freightAllocation = freightCostNum * itemValueRatio;
+      totalAllocation += freightAllocation;
+      
+      // Additional costs allocations
+      const additionalCosts = [
+        { amount: handlingFeeNum, method: costAllocationMethods.handling || 'BY_VALUE' },
+        { amount: airShippingFeeNum, method: costAllocationMethods.air || 'BY_VALUE' },
+        { amount: amazonShippingFeeNum, method: costAllocationMethods.amazon || 'BY_VALUE' },
+        { amount: miscellaneousFeeNum, method: costAllocationMethods.misc || 'BY_VALUE' }
+      ];
+      
+      let otherAllocation = 0;
+      additionalCosts.forEach(cost => {
+        if (cost.amount > 0) {
+          switch (cost.method) {
+            case 'BY_QUANTITY':
+              otherAllocation += cost.amount * itemQuantityRatio;
+              break;
+            case 'EQUAL':
+              otherAllocation += cost.amount * equalRatio;
+              break;
+            default: // BY_VALUE
+              otherAllocation += cost.amount * itemValueRatio;
+          }
+        }
+      });
+      totalAllocation += otherAllocation;
+      
+      return {
+        productId: item.productId,
+        supplierSku: item.supplierSku || null,
+        quantityOrdered: item.quantity,
+        quantityReceived: 0,
+        unitCost: item.unitCost,
+        freightAllocation: freightAllocation,
+        dutyAllocation: 0, // Not using customs duty for now
+        otherCostAllocation: otherAllocation,
+        landedUnitCost: item.unitCost + (item.quantity > 0 ? totalAllocation / item.quantity : 0)
+      };
+    });
 
     // Generate PO number
     const poNumber = await generatePONumber();
 
     // Create PO with items
- const purchaseOrder = await prisma.purchaseOrder.create({
-  data: {
-    orderNumber: poNumber,
-    poNumber: poNumber,
-    supplierId,
-    status: 'DRAFT',
-    orderDate: new Date(),
-    subtotal,
-    freightCost: freightCostNum,
-    insuranceCost: insuranceCostNum,    // ADD THIS
-    customsDuty: customsDutyNum,        // ADD THIS
-    otherFees: additionalCostsJson || otherFeesNum, // MODIFY THIS - store JSON or number
-    totalCost,
-    currency: 'USD',
-    expectedDate: expectedDate ? new Date(expectedDate) : null,
-    notes: notes || '',
-    shippingMethod: shippingMethod || '',
-    items: {
-      create: itemsWithAllocation
-    }
-  },
-  include: {
-    supplier: true,
-    items: {
+    const purchaseOrder = await prisma.purchaseOrder.create({
+      data: {
+        orderNumber: poNumber,
+        poNumber: poNumber,
+        supplierId,
+        status: 'DRAFT',
+        orderDate: new Date(),
+        subtotal,
+        freightCost: freightCostNum,
+        insuranceCost: 0, // Not using these old fields
+        customsDuty: 0,   // Not using these old fields
+        otherFees: 0,     // Not using these old fields
+        handlingFee: handlingFeeNum,
+        airShippingFee: airShippingFeeNum,
+        amazonShippingFee: amazonShippingFeeNum,
+        miscellaneousFee: miscellaneousFeeNum,
+        costAllocationMethods: costAllocationMethods,
+        totalCost,
+        currency: 'USD',
+        expectedDate: expectedDate ? new Date(expectedDate) : null,
+        notes: notes || '',
+        shippingMethod: shippingMethod || '',
+        items: {
+          create: itemsWithAllocation
+        }
+      } as any, // Type assertion to handle new fields
       include: {
-        product: true
+        supplier: true,
+        items: {
+          include: {
+            product: true
+          }
+        }
       }
-    }
-  }
-});
+    });
 
     // Convert Decimal values to numbers for JSON serialization
-// Add these fields to your serializedPO
-const serializedPO = {
-  ...purchaseOrder,
-  poNumber: purchaseOrder.orderNumber || purchaseOrder.poNumber,
-  subtotal: toNumber(purchaseOrder.subtotal),
-  freightCost: toNumber(purchaseOrder.freightCost),
-  insuranceCost: toNumber(purchaseOrder.insuranceCost),  // ADD THIS
-  customsDuty: toNumber(purchaseOrder.customsDuty),      // ADD THIS
-  otherFees: toNumber(purchaseOrder.otherFees),          // ADD THIS
-  additionalCosts: additionalCostsJson ? JSON.parse(additionalCostsJson) : [], // ADD THIS
-  totalCost: toNumber(purchaseOrder.totalCost),
-  items: purchaseOrder.items.map(item => ({
-    ...item,
-    unitCost: toNumber(item.unitCost),
-    totalCost: toNumber(item.unitCost) * item.quantityOrdered,
-    freightAllocation: toNumber(item.freightAllocation),
-    dutyAllocation: toNumber(item.dutyAllocation || 0),           // ADD THIS
-    otherCostAllocation: toNumber(item.otherCostAllocation || 0),  // ADD THIS
-    landedUnitCost: toNumber(item.landedUnitCost)
-  }))
-};
+    const serializedPO = {
+      ...purchaseOrder,
+      poNumber: purchaseOrder.orderNumber || purchaseOrder.poNumber,
+      subtotal: toNumber(purchaseOrder.subtotal),
+      freightCost: toNumber(purchaseOrder.freightCost),
+      insuranceCost: toNumber(purchaseOrder.insuranceCost),
+      customsDuty: toNumber(purchaseOrder.customsDuty),
+      otherFees: toNumber(purchaseOrder.otherFees),
+      handlingFee: toNumber((purchaseOrder as any).handlingFee),
+      airShippingFee: toNumber((purchaseOrder as any).airShippingFee),
+      amazonShippingFee: toNumber((purchaseOrder as any).amazonShippingFee),
+      miscellaneousFee: toNumber((purchaseOrder as any).miscellaneousFee),
+      costAllocationMethods: (purchaseOrder as any).costAllocationMethods,
+      totalCost: toNumber(purchaseOrder.totalCost),
+      items: purchaseOrder.items.map(item => ({
+        ...item,
+        unitCost: toNumber(item.unitCost),
+        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+        freightAllocation: toNumber(item.freightAllocation),
+        dutyAllocation: toNumber(item.dutyAllocation || 0),
+        otherCostAllocation: toNumber(item.otherCostAllocation || 0),
+        landedUnitCost: toNumber(item.landedUnitCost)
+      }))
+    };
 
     res.status(201).json({
       success: true,
@@ -427,6 +457,10 @@ router.put('/purchase-orders/:id', async (req: Request, res: Response) => {
       insuranceCost: toNumber(purchaseOrder.insuranceCost),
       customsDuty: toNumber(purchaseOrder.customsDuty),
       otherFees: toNumber(purchaseOrder.otherFees),
+      handlingFee: toNumber((purchaseOrder as any).handlingFee),
+      airShippingFee: toNumber((purchaseOrder as any).airShippingFee),
+      amazonShippingFee: toNumber((purchaseOrder as any).amazonShippingFee),
+      miscellaneousFee: toNumber((purchaseOrder as any).miscellaneousFee),
       totalCost: toNumber(purchaseOrder.totalCost),
       exchangeRate: toNumber(purchaseOrder.exchangeRate),
       items: purchaseOrder.items.map(item => ({
@@ -583,6 +617,10 @@ router.post('/purchase-orders/:id/receive', async (req: Request, res: Response) 
       insuranceCost: toNumber(result.insuranceCost),
       customsDuty: toNumber(result.customsDuty),
       otherFees: toNumber(result.otherFees),
+      handlingFee: toNumber((result as any).handlingFee),
+      airShippingFee: toNumber((result as any).airShippingFee),
+      amazonShippingFee: toNumber((result as any).amazonShippingFee),
+      miscellaneousFee: toNumber((result as any).miscellaneousFee),
       totalCost: toNumber(result.totalCost),
       exchangeRate: toNumber(result.exchangeRate),
       items: result.items.map(item => ({
