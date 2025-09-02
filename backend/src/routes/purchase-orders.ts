@@ -563,12 +563,13 @@ router.post('/purchase-orders/:id/receive', async (req: Request, res: Response) 
           await tx.inventoryMovement.create({
             data: {
               productId: poItem.productId,
+              inventoryId: inventory?.id, 
               movementType: 'RECEIPT',
               quantity: item.quantityReceived,
-              reason: `PO Receipt: ${purchaseOrder.poNumber}`,
+               notes: `PO Receipt: ${purchaseOrder.poNumber}`,
               referenceType: 'po',
               referenceId: id,
-              costImpact: landedCostNum ? landedCostNum * item.quantityReceived : null
+               createdBy: 'system' 
             }
           });
         }
