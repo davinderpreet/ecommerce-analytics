@@ -226,7 +226,8 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       expectedDate,
       freightCost = 0,
       notes,
-      shippingMethod
+      shippingMethod,
+      additionalCosts = []
     } = req.body;
 
     if (!supplierId || !items || items.length === 0) {
@@ -248,67 +249,119 @@ router.post('/purchase-orders', async (req: Request, res: Response) => {
       };
     });
 
-    const freightCostNum = parseFloat(freightCost) || 0;
-    const totalCost = subtotal + freightCostNum;
+   const freightCostNum = parseFloat(freightCost) || 0;
+
+// ADD THIS NEW SECTION - Process additional costs
+let insuranceCostNum = 0;
+let customsDutyNum = 0;
+let otherFeesNum = 0;
+let additionalCostsJson = null;
+
+if (additionalCosts && additionalCosts.length > 0) {
+  // Store the full additional costs as JSON string
+  additionalCostsJson = JSON.stringify(additionalCosts);
+  
+  // Also extract specific costs by name
+  additionalCosts.forEach((cost: any) => {
+    const amount = parseFloat(cost.amount) || 0;
+    const name = cost.name?.toLowerCase() || '';
+    
+    if (name.includes('insurance')) {
+      insuranceCostNum += amount;
+    } else if (name.includes('customs') || name.includes('duty')) {
+      customsDutyNum += amount;
+    } else {
+      otherFeesNum += amount;
+    }
+  });
+}
+// END OF NEW SECTION
+
+// Update this line to include all costs
+const totalCost = subtotal + freightCostNum + insuranceCostNum + customsDutyNum + otherFeesNum;
     
     // Allocate freight cost proportionally
-    const itemsWithAllocation = processedItems.map((item: any) => ({
-      productId: item.productId,
-      supplierSku: item.supplierSku || null,
-      quantityOrdered: item.quantity,
-      quantityReceived: 0,
-      unitCost: item.unitCost,
-      freightAllocation: subtotal > 0 ? (item.totalCost / subtotal) * freightCostNum : 0,
-      landedUnitCost: item.unitCost + (subtotal > 0 ? ((item.totalCost / subtotal) * freightCostNum) / item.quantity : 0)
-    }));
+   // Replace your current itemsWithAllocation with this enhanced version
+const itemsWithAllocation = processedItems.map((item: any) => {
+  const itemValueRatio = subtotal > 0 ? item.totalCost / subtotal : 0;
+  
+  // Calculate allocations for each cost type
+  const freightAllocation = freightCostNum * itemValueRatio;
+  const dutyAllocation = customsDutyNum * itemValueRatio;
+  const otherAllocation = (insuranceCostNum + otherFeesNum) * itemValueRatio;
+  
+  const totalAllocation = freightAllocation + dutyAllocation + otherAllocation;
+  
+  return {
+    productId: item.productId,
+    supplierSku: item.supplierSku || null,
+    quantityOrdered: item.quantity,
+    quantityReceived: 0,
+    unitCost: item.unitCost,
+    freightAllocation: freightAllocation,
+    dutyAllocation: dutyAllocation, // ADD THIS
+    otherCostAllocation: otherAllocation, // ADD THIS
+    landedUnitCost: item.unitCost + (item.quantity > 0 ? totalAllocation / item.quantity : 0)
+  };
+});
 
     // Generate PO number
     const poNumber = await generatePONumber();
 
     // Create PO with items
-    const purchaseOrder = await prisma.purchaseOrder.create({
-      data: {
-        orderNumber: poNumber,  // Use orderNumber as primary field
-        poNumber: poNumber,     // Also set poNumber for compatibility
-        supplierId,
-        status: 'DRAFT',
-        orderDate: new Date(),
-        subtotal,
-        freightCost: freightCostNum,
-        totalCost,
-        currency: 'USD',
-        expectedDate: expectedDate ? new Date(expectedDate) : null,
-        notes: notes || '',
-        shippingMethod: shippingMethod || '',
-        items: {
-          create: itemsWithAllocation
-        }
-      },
+ const purchaseOrder = await prisma.purchaseOrder.create({
+  data: {
+    orderNumber: poNumber,
+    poNumber: poNumber,
+    supplierId,
+    status: 'DRAFT',
+    orderDate: new Date(),
+    subtotal,
+    freightCost: freightCostNum,
+    insuranceCost: insuranceCostNum,    // ADD THIS
+    customsDuty: customsDutyNum,        // ADD THIS
+    otherFees: additionalCostsJson || otherFeesNum, // MODIFY THIS - store JSON or number
+    totalCost,
+    currency: 'USD',
+    expectedDate: expectedDate ? new Date(expectedDate) : null,
+    notes: notes || '',
+    shippingMethod: shippingMethod || '',
+    items: {
+      create: itemsWithAllocation
+    }
+  },
+  include: {
+    supplier: true,
+    items: {
       include: {
-        supplier: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
+        product: true
       }
-    });
+    }
+  }
+});
 
     // Convert Decimal values to numbers for JSON serialization
-    const serializedPO = {
-      ...purchaseOrder,
-      poNumber: purchaseOrder.orderNumber || purchaseOrder.poNumber,  // Use orderNumber as display
-      subtotal: toNumber(purchaseOrder.subtotal),
-      freightCost: toNumber(purchaseOrder.freightCost),
-      totalCost: toNumber(purchaseOrder.totalCost),
-      items: purchaseOrder.items.map(item => ({
-        ...item,
-        unitCost: toNumber(item.unitCost),
-        totalCost: toNumber(item.unitCost) * item.quantityOrdered,
-        freightAllocation: toNumber(item.freightAllocation),
-        landedUnitCost: toNumber(item.landedUnitCost)
-      }))
-    };
+// Add these fields to your serializedPO
+const serializedPO = {
+  ...purchaseOrder,
+  poNumber: purchaseOrder.orderNumber || purchaseOrder.poNumber,
+  subtotal: toNumber(purchaseOrder.subtotal),
+  freightCost: toNumber(purchaseOrder.freightCost),
+  insuranceCost: toNumber(purchaseOrder.insuranceCost),  // ADD THIS
+  customsDuty: toNumber(purchaseOrder.customsDuty),      // ADD THIS
+  otherFees: toNumber(purchaseOrder.otherFees),          // ADD THIS
+  additionalCosts: additionalCostsJson ? JSON.parse(additionalCostsJson) : [], // ADD THIS
+  totalCost: toNumber(purchaseOrder.totalCost),
+  items: purchaseOrder.items.map(item => ({
+    ...item,
+    unitCost: toNumber(item.unitCost),
+    totalCost: toNumber(item.unitCost) * item.quantityOrdered,
+    freightAllocation: toNumber(item.freightAllocation),
+    dutyAllocation: toNumber(item.dutyAllocation || 0),           // ADD THIS
+    otherCostAllocation: toNumber(item.otherCostAllocation || 0),  // ADD THIS
+    landedUnitCost: toNumber(item.landedUnitCost)
+  }))
+};
 
     res.status(201).json({
       success: true,
