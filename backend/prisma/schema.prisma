@@ -175,6 +175,8 @@ model Inventory {
   minOrderQuantity    Int?      @default(1) @map("min_order_quantity")
   maxStockLevel       Int?      @map("max_stock_level")
   notes               String?
+
+  movements     InventoryMovement[]  // Add this relation
   
   @@index([productId])
   @@map("inventory")
