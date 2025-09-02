@@ -354,6 +354,13 @@ model PurchaseOrder {
   insuranceCost    Decimal?       @db.Decimal(10, 2)
   customsDuty      Decimal?       @db.Decimal(10, 2)
   otherFees        Decimal?       @db.Decimal(10, 2)
+ handlingFee          Decimal?   @db.Decimal(10, 2) @default(0)
+  airShippingFee       Decimal?   @db.Decimal(10, 2) @default(0)
+  amazonShippingFee    Decimal?   @db.Decimal(10, 2) @default(0)
+  miscellaneousFee     Decimal?   @db.Decimal(10, 2) @default(0)
+  costAllocationMethods Json?     // Will store allocation methods for each cost
+
+
   totalCost        Decimal        @db.Decimal(10, 2)
   currency         String         @default("USD")
   exchangeRate     Decimal?       @db.Decimal(10, 6)
@@ -363,6 +370,7 @@ model PurchaseOrder {
   notes            String?        @db.Text
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+
   
   // Relations
   supplier         Supplier       @relation(fields: [supplierId], references: [id])
