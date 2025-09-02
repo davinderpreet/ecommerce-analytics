@@ -55,6 +55,9 @@ const CreatePOModal = ({ show, onClose, onSuccess, API_BASE }) => {
   const [items, setItems] = useState([
     { productId: '', quantity: 0, unitCost: 0, supplierSku: '' }
   ]);
+  // NEW: State for additional costs
+const [additionalCosts, setAdditionalCosts] = useState([]);
+  
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -103,12 +106,42 @@ const CreatePOModal = ({ show, onClose, onSuccess, API_BASE }) => {
     newItems[index][field] = value;
     setItems(newItems);
   };
-
-  const calculateTotals = () => {
-    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
-    const total = subtotal + parseFloat(formData.freightCost || 0);
-    return { subtotal, total };
+  // Functions to manage additional costs
+const addCost = () => {
+  const newCost = {
+    id: Date.now().toString(), // Simple unique ID
+    name: '',
+    amount: 0,
+    allocationMethod: 'BY_VALUE',
+    description: ''
   };
+  setAdditionalCosts([...additionalCosts, newCost]);
+};
+
+const removeCost = (index) => {
+  setAdditionalCosts(additionalCosts.filter((_, i) => i !== index));
+};
+
+const updateCost = (index, field, value) => {
+  const newCosts = [...additionalCosts];
+  newCosts[index][field] = value;
+  setAdditionalCosts(newCosts);
+};
+  
+
+const calculateTotals = () => {
+  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
+  const freightCostNum = parseFloat(formData.freightCost || 0);
+  
+  // NEW: Calculate total additional costs
+  const totalAdditionalCosts = additionalCosts.reduce((sum, cost) => 
+    sum + parseFloat(cost.amount || 0), 0
+  );
+  
+  const total = subtotal + freightCostNum + totalAdditionalCosts;
+  
+  return { subtotal, freightCostNum, totalAdditionalCosts, total };
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
