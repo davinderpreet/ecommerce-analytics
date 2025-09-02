@@ -255,7 +255,69 @@ const calculateTotals = () => {
                 + Add Item
               </button>
             </div>
-
+{/* Additional Costs Section - NEW */}
+<div>
+  <div className="flex justify-between items-center mb-3">
+    <label className="text-white/70 text-sm">Additional Costs</label>
+    <button
+      type="button"
+      onClick={addCost}
+      className="px-3 py-1.5 bg-green-500/20 text-green-300 rounded-lg hover:bg-green-500/30 flex items-center space-x-1 text-sm"
+    >
+      <Plus className="w-4 h-4" />
+      <span>Add Cost</span>
+    </button>
+  </div>
+  
+  {additionalCosts.length > 0 && (
+    <div className="space-y-3 bg-white/5 rounded-xl p-4">
+      {additionalCosts.map((cost, index) => (
+        <div key={cost.id} className="grid grid-cols-12 gap-3 items-center">
+          <div className="col-span-4">
+            <input
+              type="text"
+              placeholder="Cost name (e.g., Customs Duty)"
+              value={cost.name}
+              onChange={(e) => updateCost(index, 'name', e.target.value)}
+              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 text-sm"
+            />
+          </div>
+          <div className="col-span-3">
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Amount"
+              value={cost.amount}
+              onChange={(e) => updateCost(index, 'amount', e.target.value)}
+              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 text-sm"
+            />
+          </div>
+          <div className="col-span-4">
+            <select
+              value={cost.allocationMethod}
+              onChange={(e) => updateCost(index, 'allocationMethod', e.target.value)}
+              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+            >
+              <option value="BY_VALUE">Allocate by Value</option>
+              <option value="BY_QUANTITY">Allocate by Quantity</option>
+              <option value="EQUAL">Split Equally</option>
+            </select>
+          </div>
+          <div className="col-span-1">
+            <button
+              type="button"
+              onClick={() => removeCost(index)}
+              className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30"
+              title="Remove cost"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
             <div className="space-y-3">
               {items.map((item, index) => (
                 <div key={index} className="grid grid-cols-5 gap-3 items-center">
@@ -321,20 +383,39 @@ const calculateTotals = () => {
           </div>
 
           {/* Totals */}
-          <div className="bg-white/5 rounded-xl p-4 space-y-2">
-            <div className="flex justify-between text-white/70">
-              <span>Subtotal</span>
-              <span>${subtotal.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-white/70">
-              <span>Freight</span>
-              <span>${parseFloat(formData.freightCost || 0).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-white font-bold text-lg">
-              <span>Total</span>
-              <span>${total.toFixed(2)}</span>
-            </div>
-          </div>
+         {/* Enhanced Totals */}
+<div className="bg-white/5 rounded-xl p-4 space-y-2">
+  <div className="flex justify-between text-white/70">
+    <span>Subtotal</span>
+    <span>${calculateTotals().subtotal.toFixed(2)}</span>
+  </div>
+  <div className="flex justify-between text-white/70">
+    <span>Freight</span>
+    <span>${calculateTotals().freightCostNum.toFixed(2)}</span>
+  </div>
+  
+  {/* Show each additional cost */}
+  {additionalCosts.filter(c => c.name && c.amount > 0).map((cost, index) => (
+    <div key={cost.id} className="flex justify-between text-white/70">
+      <span>{cost.name}</span>
+      <span>${parseFloat(cost.amount || 0).toFixed(2)}</span>
+    </div>
+  ))}
+  
+  {calculateTotals().totalAdditionalCosts > 0 && (
+    <div className="border-t border-white/10 pt-2 mt-2">
+      <div className="flex justify-between text-white/70 text-sm">
+        <span>Total Additional Costs</span>
+        <span>${calculateTotals().totalAdditionalCosts.toFixed(2)}</span>
+      </div>
+    </div>
+  )}
+  
+  <div className="flex justify-between text-white font-bold text-lg border-t border-white/20 pt-2">
+    <span>Total</span>
+    <span>${calculateTotals().total.toFixed(2)}</span>
+  </div>
+</div>
 
           {/* Actions */}
           <div className="flex space-x-3">
