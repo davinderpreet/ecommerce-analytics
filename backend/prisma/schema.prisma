@@ -485,6 +485,7 @@ model InventoryMovement {
   
   @@index([createdAt])
   @@index([movementType])
+  @@map("inventory_movements") 
 }
 
 // 8. Stock Counts (for physical inventory)
